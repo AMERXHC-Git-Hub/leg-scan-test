@@ -143,7 +143,8 @@ window.Sizing = (function(){
       return res;
     }
     res.outcome = "physician"; res.noCommon = true; res.options = Array.from(new Set(A.concat(C))).sort((x,y) => x-y);
-    res.reason = "No single size covers both the ankle and the calf.";
+    res.options.push(-1); // -1 = custom garment
+    res.reason = "No single size covers both the ankle and the calf, so this patient may need a custom garment.";
     return res;
   }
   return { candidates, ankleCalf, lengthOf, shoe, overlap };

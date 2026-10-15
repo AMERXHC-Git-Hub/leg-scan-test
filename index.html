@@ -372,7 +372,7 @@ function results(){
   $("chartpanel").hidden = false; $("cmpbox").hidden = false;
   const R = combine(); S.combined = R; const P = product, sizes = P.sizes || [];
   $("res-label").textContent = P.name;
-  const code = i => sizes[i] ? sizes[i].name : "";
+  const code = i => i === -1 ? "Custom garment" : sizes[i] ? sizes[i].name : "";
   let rec = "";
   if (P.rules === "ankleCalf" || P.rules === "overlap"){
     if (R.ankle && R.calf){
@@ -393,9 +393,9 @@ function results(){
           : `<div class="rec custom"><span class="label">Recommended</span><span class="big">Prescribed custom garment only</span><span>${z.reason} Custom prescribed compression wear should be used.</span></div>`;
       } else {
         const ch = S.choice;
-        rec = `<div class="rec physician"><span class="label">${z.noCommon ? "No single size fits both · clinician's choice" : "Between sizes · physician's choice"}</span><span class="big">${S.confirmed && ch!=null ? code(ch) + (L && L.index>=0 ? " · " + P.lengths[L.index].name : "") : "Your decision"}</span><span>${z.reason}</span>
-          <span class="small">${z.noCommon ? "The ankle and calf point to different sizes." : "This patient is between sizes."} You need to make the final determination based on what you believe is best for the patient. Choose a size:</span>
-          <div class="choices">${z.options.map(i => `<button class="choice" data-choice="${i}" aria-pressed="${ch===i}">${sizes[i].code}</button>`).join("")}</div>
+        rec = `<div class="rec physician"><span class="label">${z.noCommon ? "No single size fits both · clinician's choice" : "Between sizes · physician's choice"}</span><span class="big">${S.confirmed && ch!=null ? code(ch) + (ch>=0 && L && L.index>=0 ? " · " + P.lengths[L.index].name : "") : "Your decision"}</span><span>${z.reason}</span>
+          <span class="small">${z.noCommon ? "The ankle and calf point to different sizes. Choose a size or a custom garment" : "This patient is between sizes. You need to make the final determination based on what you believe is best for the patient. Choose a size"}:</span>
+          <div class="choices">${z.options.map(i => `<button class="choice" data-choice="${i}" aria-pressed="${ch===i}">${i === -1 ? "Custom garment" : sizes[i].code}</button>`).join("")}</div>
           <label class="confirm"><input type="checkbox" id="confirmchk" ${S.confirmed ? "checked" : ""} ${ch==null ? "disabled" : ""}><span>I have reviewed these measurements and determined that <b>${ch!=null ? code(ch) : "the selected size"}</b> is best for this patient.</span></label>
           ${lenTxt}</div>`;
       }
