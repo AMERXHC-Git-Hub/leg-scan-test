@@ -266,7 +266,7 @@ function measureSide(G, S, cam){
   const XL = hit(cam, eL, pn, G1), XR = hit(cam, eR, pn, G1);
   const footLen = Math.abs(V.dot(V.sub(XR, XL), u));
   const pr = profileInPlane(G, S, rows, cam, pn, G1, cam.n);
-  return { prof: pr.prof, edges: pr.edges, footLen, footLine: [eL, eR], top: pr.prof.length ? pr.prof[pr.prof.length-1].h : 0 };
+  return { pn, P0: G1, prof: pr.prof, edges: pr.edges, footLen, footLine: [eL, eR], top: pr.prof.length ? pr.prof[pr.prof.length-1].h : 0 };
 }
 function measureFront(G, S, cam){
   const rows = rowSpans(S), P0 = cam.center, pn = V.unit(horiz(V.unit(P0), cam.n));
@@ -331,5 +331,11 @@ async function analyzePhoto(img, mode, opts){
   return out;
 }
 
-window.LegScan = { getCV, analyzePhoto, CW, CH };
+/* Height above the floor of a point the clinician taps on the side photo (full-resolution pixel coordinates). */
+function heightAt(r, p){
+  if (!r || !r.side || !r.cam) return null;
+  const X = hit(r.cam, p, r.side.pn, r.side.P0); if (!X) return null;
+  return V.dot(V.sub(X, r.side.P0), r.cam.n);
+}
+window.LegScan = { getCV, analyzePhoto, heightAt, CW, CH };
 })();

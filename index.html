@@ -98,6 +98,24 @@ td { padding: 8px 6px; border-bottom: 1px solid var(--line); }
 td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .empty { border: 1px dashed var(--line); border-radius: 10px; padding: 16px; text-align: center; color: var(--muted); }
 .banner { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: .9rem; }
+.prod { display: grid; grid-template-columns: 24px 1fr; gap: 12px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; min-height: 56px; }
+.prod input { width: 20px; height: 20px; accent-color: var(--tape-ink); margin: 0; }
+.prod.on { border-color: var(--tape); box-shadow: inset 0 0 0 1px var(--tape); }
+.prod.off { opacity: .55; cursor: default; }
+.prod b { display: block; } .prod span { font-size: .85rem; color: var(--muted); }
+.rec { border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px; border: 2px solid var(--good); background: var(--good-bg); color: var(--ink); }
+.rec.custom { border-color: var(--bad); background: var(--bad-bg); }
+.rec.physician { border-color: var(--warn); background: var(--warn-bg); }
+.rec .label { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+.rec .big { font: 700 2.4rem/1.05 var(--f-display); }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice { min-height: 48px; min-width: 64px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: 600 1rem var(--f-body); cursor: pointer; }
+.choice[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.confirm { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; font-size: .95rem; cursor: pointer; }
+.confirm input { width: 24px; height: 24px; margin: 2px 0 0; accent-color: var(--tape-ink); }
+.mtable td .sz { font-weight: 600; }
+.unit { display: flex; gap: 6px; align-items: center; }
+.unit select { min-height: 40px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: 500 .95rem var(--f-body); padding: 0 8px; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 10px; z-index: 5; max-width: 90vw; }
 </style>
 
@@ -106,25 +124,15 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
   <div class="body" style="padding-top:24px">
     <div class="hero-rule" aria-hidden="true"></div>
     <h1>Leg Scan Field Test</h1>
-    <p>Three photos and a card on the floor. The app finds the leg and foot on its own and measures ankle and calf circumference, foot length and foot width.</p>
-    <div class="illus" aria-hidden="true">
-      <svg viewBox="0 0 300 170" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M60 10 C56 50 66 70 60 100 C56 118 58 132 62 142 L46 150 C40 154 44 160 52 160 L86 160 C92 158 90 150 84 146 L80 140 C84 120 86 104 82 84 C78 60 84 36 80 10"/>
-        <path d="M90 150 L118 150 L122 162 L92 162 Z" stroke="var(--card)"/>
-        <path d="M150 20 C146 56 156 76 150 104 C147 120 148 134 150 142 L146 156 L232 158 C240 156 238 148 228 146 L184 138 C180 118 184 100 180 84 C176 58 182 36 178 20"/>
-        <path d="M160 162 L196 162 L200 168 L162 168 Z" stroke="var(--card)"/>
-        <path d="M30 164 H270" stroke="var(--muted)"/>
-        <path d="M256 30 c14 0 22 10 22 30 c0 22 -6 40 -12 52 c-6 12 -22 12 -26 0 c-6 -14 -6 -40 -2 -56 c2 -16 8 -26 18 -26z" />
-        <rect x="236" y="120" width="34" height="22" rx="2" stroke="var(--card)" transform="rotate(-8 253 131)"/>
-      </svg>
-    </div>
+    <p>Measure the patient's lower leg from two photos with a card on the floor, then get the recommended garment size.</p>
+    <h3>Product</h3>
+    <div class="list" id="prodlist"></div>
     <p class="small muted">Photos are measured on this phone and never uploaded.</p>
     <p class="small muted" id="toolstatus">Loading the measuring tools…</p>
   </div>
   <div class="actions">
     <button class="btn primary" id="go-start">Start measuring</button>
-    <button class="btn" id="go-own">Use photos already on my phone</button>
-    <button class="btn link" id="go-log">Test log and settings</button>
+    <button class="btn link" id="go-log">Test log</button>
   </div>
 </div>
 
@@ -134,18 +142,17 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
     <div class="topbar"><button class="back" data-back="home" aria-label="Back">‹</button><span class="steplabel">Before you start</span></div>
     <h2>Get set up</h2>
     <div class="list">
-      <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="44" height="34" rx="2"/><path d="M6 46h44"/></svg>
-        <p><b>Any room is fine.</b> Bare leg or tight leggings. Loose pants or socks will be measured as part of the leg.</p></div>
-      <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><rect x="10" y="16" width="36" height="24" rx="3" stroke="var(--card)"/><path d="M10 22h36" stroke="var(--card)"/></svg>
-        <p><b>A standard-size card, flat on the floor.</b> Any bank, gift or ID card. Lay it face down so no card number is in the photo. A light-colored back works best on dark floors.</p></div>
-      <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="14" r="5"/><path d="M18 19v16M18 35l-6 14M18 35l6 14M10 26h16"/><rect x="34" y="20" width="12" height="20" rx="2"/></svg>
-        <p><b>A helper takes the photos.</b> The person being measured stands still with weight on both feet.</p></div>
+      <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 40 L22 30 L48 30 L36 40 Z" stroke="var(--card)"/></svg>
+        <p><b>A standard-size card, flat on the floor.</b> Any bank, gift or ID card, face down so no number shows. A light-colored back stands out best.</p></div>
+      <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 6 C20 20 26 30 22 40 L18 48 L38 48 L32 40 C30 30 36 20 34 6"/></svg>
+        <p><b>Bare leg or tight leggings, up past the knee.</b> Loose clothing or socks would be measured as part of the leg.</p></div>
+      <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="14" r="5"/><path d="M18 19v16M18 35l-6 14M18 35l6 14"/><rect x="34" y="20" width="12" height="20" rx="2"/></svg>
+        <p><b>The patient stands still</b> with weight on both feet while you take the photos.</p></div>
     </div>
   </div>
-  <div class="actions"><button class="btn primary" data-go="front">I'm ready</button></div>
+  <div class="actions"><button class="btn primary" id="go-first">Continue</button></div>
 </div>
 
-<!-- CAPTURE SCREENS (built from one template) -->
 <div class="screen" id="s-front" hidden></div>
 <div class="screen" id="s-side" hidden></div>
 <div class="screen" id="s-foot" hidden></div>
@@ -153,24 +160,27 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 <!-- RESULTS -->
 <div class="screen" id="s-results" hidden>
   <div class="body">
-    <div class="topbar"><button class="back" data-back="foot" aria-label="Back">‹</button><span class="steplabel">Results</span></div>
-        <h2>Measurements</h2>
-    <div class="metrics" id="metrics"></div>
+    <div class="topbar"><button class="back" id="res-back" aria-label="Back">‹</button><span class="steplabel" id="res-label">Results</span></div>
+    <div id="recbox"></div>
+    <div class="panel">
+      <h3>Measurements</h3>
+      <div class="tablewrap"><table class="mtable"><thead><tr><th>Measure</th><th style="text-align:right">cm</th><th style="text-align:right">in</th><th>Chart</th></tr></thead><tbody id="mrows"></tbody></table></div>
+      <p class="small muted" id="mnote"></p>
+    </div>
     <div class="panel">
       <h3>Circumference up the leg</h3>
       <div class="chartwrap" id="chart"></div>
-      <p class="small muted">Measured every centimeter from the front and side outlines and estimated as an oval at each height.</p>
     </div>
     <details class="panel" id="cmpbox">
       <summary>Compare with a tape measure</summary>
-      <p class="small muted">Measure the same spots with a tape and enter the values. Saved comparisons go to the test log.</p>
+      <div class="unit"><label for="cmpunit" class="small muted">Tape units</label><select id="cmpunit"><option value="cm">Centimeters</option><option value="in">Inches</option></select></div>
       <div id="cmp" class="list"></div>
       <button class="btn" id="cmp-save">Save to test log</button>
     </details>
   </div>
   <div class="actions">
-    <button class="btn primary" id="go-again">Measure again</button>
-    <button class="btn link" id="go-log2">Test log and settings</button>
+    <button class="btn primary" id="go-again">Measure another patient</button>
+    <button class="btn link" id="go-log2">Test log</button>
   </div>
 </div>
 
@@ -179,7 +189,7 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
   <div class="body">
     <div class="topbar"><button class="back" id="log-back" aria-label="Back">‹</button><span class="steplabel">Test log</span></div>
     <h2>Accuracy log</h2>
-    <p class="small muted">Each saved comparison against a tape measure. The target is within 2 mm.</p>
+    <p class="small muted">Each saved comparison against a tape measure. The target is within 2 mm (0.08 in).</p>
     <div id="logsum"></div>
     <div id="logrows"></div>
   </div>
@@ -191,79 +201,94 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 <div class="toast" id="toast" hidden></div>
 <script src="opencv.js" async></script>
 <script src="pipeline.js"></script>
-
+<script src="products.js"></script>
 <script>
 (function(){
 "use strict";
-const CARD_W = 85.60, CARD_H = 53.98, LOGKEY = "legscan.v2.log";
 const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const S = { screen: "home", prev: "home", photo: {}, file: {}, res: {}, sample: false };
+const LOGKEY = "legscan.v3.log", PRODKEY = "legscan.product";
+const S = { screen: "home", prev: "home", photo: {}, file: {}, res: {}, kneeTap: null, legLen: null, choice: null, confirmed: false };
 let toolsReady = false;
-LegScan.getCV().then(() => { toolsReady = true; const el = $("toolstatus"); if (el) el.textContent = "Measuring tools ready."; const w = $("workmsg"); if (w) w.textContent = "Finding the card and outline…"; }, () => { const el = $("toolstatus"); if (el) el.textContent = "The measuring tools didn't load. Check the internet connection and reload the page."; });
+LegScan.getCV().then(() => { toolsReady = true; $("toolstatus").textContent = "Measuring tools ready."; const w = $("workmsg"); if (w) w.textContent = "Finding the card and the leg…"; },
+  () => { $("toolstatus").textContent = "The measuring tools didn't load. Check the internet connection and reload the page."; });
 
-/* ===================== COMBINE ===================== */
-const dist = (a,b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
-function interp(prof, h){ if (!prof.length || h<prof[0].h || h>prof[prof.length-1].h) return null;
-  let lo=0, hi=prof.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if (prof[m].h<=h) lo=m; else hi=m; }
-  const a=prof[lo], b=prof[hi]; return b.h===a.h ? a.w : a.w+(b.w-a.w)*(h-a.h)/(b.h-a.h); }
-function oval(w,d){ const a=w/2,b=d/2,q=((a-b)/(a+b))**2; return Math.PI*(a+b)*(1+3*q/(10+Math.sqrt(4-3*q))); }
-function combine(){
-  const out = {};
-  const f = S.res.front && S.res.front.front, s = S.res.side && S.res.side.side;
-  if (f && s && f.prof.length && s.prof.length){
-    const top = Math.min(f.top, s.top) - 10, curve = [];
-    for (let h=60; h<=top; h+=10){ const w=interp(f.prof,h), d=interp(s.prof,h); if (w!=null && d!=null) curve.push({ h, c: oval(w,d), w, d }); }
-    out.curve = curve;
-    const band = (a,b) => curve.filter(p=>p.h>=a && p.h<=b);
-    const ab = band(60, 200); if (ab.length) out.ankle = Object.assign({}, ab.reduce((m,p)=>p.c<m.c?p:m));
-    const cb = band(200, 480); if (cb.length && top>=250) out.calf = Object.assign({}, cb.reduce((m,p)=>p.c>m.c?p:m));
-    [out.ankle, out.calf].forEach(p => { if (!p) return; const base=p.h; for (let h=base-9; h<=base+9; h+=1){ const w=interp(f.prof,h), d=interp(s.prof,h); if (w==null||d==null) continue; const c=oval(w,d);
-      if ((p===out.ankle && c<p.c) || (p===out.calf && c>p.c)) { p.h=h; p.c=c; p.w=w; p.d=d; } } });
-  }
-  if (s && s.footLen) out.footLen = s.footLen;
-  const ft = S.res.foot && S.res.foot.foot; if (ft) out.footWid = ft.width;
-  return out;
+/* ---------- units ---------- */
+const cm = mm => mm/10, inch = mm => mm/25.4;
+const both = mm => `${cm(mm).toFixed(1)} cm / ${inch(mm).toFixed(1)} in`;
+const rangeTxt = r => r ? `${r.cm[0]}–${r.cm[1]} cm / ${r.in[0]}–${r.in[1]} in` : "";
+
+/* ---------- product ---------- */
+let product = null;
+function renderProducts(){
+  let saved = null; try { saved = localStorage.getItem(PRODKEY); } catch(e){}
+  const avail = PRODUCTS.filter(p => p.available);
+  product = avail.find(p => p.id === saved) || avail[0];
+  $("prodlist").innerHTML = PRODUCTS.map(p => `<label class="prod ${p.available ? "" : "off"} ${product && p.id===product.id ? "on" : ""}">
+    <input type="radio" name="prod" value="${p.id}" ${p.available ? "" : "disabled"} ${product && p.id===product.id ? "checked" : ""}>
+    <div><b>${p.name}</b><span>${p.available ? p.short : p.short + " · sizing chart not added yet"}</span></div></label>`).join("");
+  document.querySelectorAll('input[name="prod"]').forEach(r => r.onchange = () => {
+    product = PRODUCTS.find(p => p.id === r.value); try { localStorage.setItem(PRODKEY, product.id); } catch(e){}
+    document.querySelectorAll(".prod").forEach(l => l.classList.toggle("on", l.querySelector("input").checked)); });
 }
 
-/* ===================== CAPTURE SCREENS ===================== */
+/* ---------- photo steps ---------- */
 const FLOOR_ART = (leg, card) => `<svg viewBox="0 0 240 200" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="20" y="8" width="200" height="176" rx="6" stroke="var(--muted)" stroke-dasharray="5 5"/><path d="M20 120 H220" stroke="var(--muted)"/>${leg}<path d="${card}" stroke="var(--card)" stroke-width="2.5"/></svg>`;
-const STEPS = {
-  front: { n:1, title:"Front of the leg", next:"side", back:"setup", what:"leg",
-    tips:["Lay the card flat on the floor, right beside the heel.","Face the leg toward the camera. The whole lower leg, the foot and the card should be in the photo.","Stand back about 1 meter. The app checks the distance for you."],
+const STEP_INFO = {
+  front: { title: "Front of the leg", what: "leg",
+    tips: ["Lay the card flat on the floor, right beside the heel.", "Face the patient's leg toward the camera. Fit the whole lower leg, the knee, the foot and the card in the photo.", "Stand back about 1 meter. The app checks the distance."],
     art: FLOOR_ART(`<path d="M108 14 C104 50 112 74 108 104 C106 120 106 130 108 140 L100 160 C96 166 102 170 110 170 L126 170 C132 168 130 162 126 158 L122 140 C124 124 126 108 124 88 C122 60 128 36 126 14"/>`, "M134 148 L170 148 L176 166 L138 166 Z") },
-  side: { n:2, title:"Side of the leg", next:"foot", back:"front", what:"leg",
-    tips:["Lay the card flat on the floor in front of the foot, between the foot and the phone.","Turn so the camera sees the side of the leg. Feet stay planted.","Fit the whole lower leg, the foot and the card in the photo."],
+  side: { title: "Side of the leg", what: "leg",
+    tips: ["Lay the card flat on the floor in front of the foot, between the foot and the phone.", "Photograph the side of the leg. The patient's feet stay planted.", "Fit the whole lower leg, the knee, the foot and the card in the photo."],
     art: FLOOR_ART(`<path d="M84 14 C80 56 90 84 84 116 C80 136 80 146 84 154 L80 164 L160 166 C168 164 166 156 156 154 L118 146 C114 128 118 112 114 96 C110 66 116 40 112 14"/>`, "M100 172 L140 172 L146 182 L104 182 Z") },
-  foot: { n:3, title:"Foot from the front", next:"results", back:"side", what:"foot",
-    tips:["Lay the card flat on the floor in front of the toes.","Hold the phone above and in front of the foot, looking down at it.","Fit the whole foot and the card in the photo."],
+  foot: { title: "Foot from the front", what: "foot",
+    tips: ["Lay the card flat on the floor in front of the toes.", "Hold the phone above and in front of the foot, looking down at it.", "Fit the whole foot and the card in the photo."],
     art: FLOOR_ART(`<path d="M104 14 L104 70 C104 90 98 110 96 130 C94 146 100 156 112 156 C124 156 130 146 128 130 C126 110 122 90 122 70 L122 14"/>`, "M94 166 L132 166 L138 182 L90 182 Z") }
 };
+const steps = () => product.photos;
+const nextOf = k => { const s = steps(), i = s.indexOf(k); return i < s.length-1 ? s[i+1] : "results"; };
+const backOf = k => { const s = steps(), i = s.indexOf(k); return i > 0 ? s[i-1] : "setup"; };
+const needsKnee = k => k === "side" && product.lengths;
+
 function captureScreen(key){
-  const st = STEPS[key], el = $("s-"+key), ph = S.photo[key], r = S.res[key];
-  const top = `<div class="topbar"><button class="back" data-back="${st.back}" aria-label="Back">‹</button><div style="flex:1;display:flex;flex-direction:column;gap:6px"><span class="steplabel">Photo ${st.n} of 3</span><div class="bar"><i style="width:${st.n/3*100}%"></i></div></div></div>`;
-  const fileBtns = (primary) => `<label class="btn ${primary?"primary":""}">Take photo<input type="file" accept="image/*" capture="environment" data-file="${key}"></label>
+  const st = STEP_INFO[key], el = $("s-"+key), ph = S.photo[key], r = S.res[key], s = steps(), n = s.indexOf(key)+1;
+  const top = `<div class="topbar"><button class="back" data-back="${backOf(key)}" aria-label="Back">‹</button><div style="flex:1;display:flex;flex-direction:column;gap:6px"><span class="steplabel">Photo ${n} of ${s.length}</span><div class="bar"><i style="width:${n/s.length*100}%"></i></div></div></div>`;
+  const fileBtns = primary => `<label class="btn ${primary?"primary":""}">Take photo<input type="file" accept="image/*" capture="environment" data-file="${key}"></label>
       <label class="btn">Choose from photos<input type="file" accept="image/*" data-file="${key}"></label>`;
   let body, actions;
   if (!ph){
     body = `<h2>${st.title}</h2><div class="illus" aria-hidden="true">${st.art}</div>
-      <ul class="bullets">${st.tips.map((t,i)=>`<li><b>${i+1}</b><span>${t}</span></li>`).join("")}</ul>
-      <p class="small muted">Already took this photo? Tap "Choose from photos" below to pick it from your phone.</p>`;
-    actions = fileBtns(true) + (key!=="front" ? `<button class="btn link" data-skip="${st.next}">Skip this photo</button>` : "");
+      <ul class="bullets">${st.tips.map((t,i)=>`<li><b>${i+1}</b><span>${t}</span></li>`).join("")}</ul>`;
+    actions = fileBtns(true);
   } else if (!r){
-    body = `<h2>${st.title}</h2><div class="working"><div class="spinner"></div><span id="workmsg">${toolsReady ? `Finding the card and ${st.what}…` : "Loading the measuring tools (first time only)…"}</span></div>`;
+    body = `<h2>${st.title}</h2><div class="working"><div class="spinner"></div><span id="workmsg">${toolsReady ? `Finding the card and the ${st.what}…` : "Loading the measuring tools (first time only)…"}</span></div>`;
     actions = "";
   } else {
     const icon = s => s==="ok" ? "✓" : s==="warn" ? "!" : "✕";
-    const summary = r.ok ? (r.checks.some(c=>c.s==="warn") ? "Usable, with a warning" : "Photo looks good") : "This photo needs fixing";
-    body = `<h2>${summary}</h2>
+    const kneeStep = r.ok && needsKnee(key);
+    let summary = r.ok ? (r.checks.some(c=>c.s==="warn") ? "Usable, with a warning" : "Photo looks good") : "This photo needs fixing";
+    let kneeMsg = "";
+    if (kneeStep){
+      if (S.kneeTap){ summary = "Leg length measured"; kneeMsg = `<div class="rec"><span class="label">Leg length (L)</span><span class="big">${both(S.legLen)}</span><span class="small">Tap the photo again to move the knee marker.</span></div>`; }
+      else { summary = "Tap the bump below the knee"; kneeMsg = `<p><b>Tap the bony bump just below the kneecap</b> (the tibial tuberosity) on the front edge of the shin. The app measures leg length from the floor to that point.</p>`; }
+    }
+    const guide = `<details class="panel" ${r.ok ? "" : "open"}><summary>How to take the ${st.title.toLowerCase()} photo</summary>
+        <div class="illus" aria-hidden="true">${st.art}</div>
+        <ul class="bullets">${st.tips.map((t,i)=>`<li><b>${i+1}</b><span>${t}</span></li>`).join("")}</ul></details>`;
+    body = `<h2>${summary}</h2>${kneeMsg}
       <div class="stage"><canvas id="cv-${key}" aria-label="Photo with the detected card and outline drawn on it"></canvas></div>
       ${r.needSeed ? `<p><b>Tap the card in the photo</b> if it's there, and the app will look again.</p>` : ""}
-      <ul class="checks">${r.checks.map(c=>`<li class="${c.s}"><span class="ic" aria-hidden="true">${icon(c.s)}</span><span>${c.t}${c.fix?`<span class="fix">${c.fix}</span>`:""}</span></li>`).join("")}</ul>`;
-    actions = r.ok ? `<button class="btn primary" data-go="${st.next}">Use this photo</button><label class="btn">Retake<input type="file" accept="image/*" capture="environment" data-file="${key}"></label>`
-                   : fileBtns(true) + (key!=="front" ? `<button class="btn link" data-skip="${st.next}">Skip this photo</button>` : "");
+      <ul class="checks">${r.checks.map(c=>`<li class="${c.s}"><span class="ic" aria-hidden="true">${icon(c.s)}</span><span>${c.t}${c.fix?`<span class="fix">${c.fix}</span>`:""}</span></li>`).join("")}</ul>
+      ${guide}`;
+    if (r.ok){
+      const ready = !kneeStep || S.kneeTap;
+      actions = `<button class="btn primary" data-go="${nextOf(key)}" ${ready ? "" : "disabled"}>${ready ? "Use this photo" : "Tap the knee bump first"}</button>
+        <label class="btn">Retake<input type="file" accept="image/*" capture="environment" data-file="${key}"></label>` +
+        (kneeStep && !S.kneeTap ? `<button class="btn link" id="noknee">Knee isn't in the photo — continue without leg length</button>` : "");
+    } else actions = fileBtns(true);
   }
   el.innerHTML = `<div class="body">${top}${body}</div>${actions?`<div class="actions">${actions}</div>`:""}`;
+  const nk = $("noknee"); if (nk) nk.onclick = () => { S.kneeTap = null; S.legLen = null; show(nextOf(key)); };
   if (ph && r) requestAnimationFrame(()=>drawReview(key));
 }
 function drawReview(key){
@@ -271,116 +296,181 @@ function drawReview(key){
   const W = cv.parentElement.clientWidth, dpr = window.devicePixelRatio||1, disp = W/img.naturalWidth, H = img.naturalHeight*disp;
   cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr); cv.style.height = H+"px";
   const g = cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.drawImage(img,0,0,W,H);
-  const f = disp/(r.fs||1), P = p => [p[0]*f, p[1]*f], legCol = css("--leg"), tape = css("--tape");
+  const f = disp/(r.fs||1), P = p => [p[0]*f, p[1]*f], tape = css("--tape");
   const poly = (pts, col, wdt, close) => { g.strokeStyle=col; g.lineWidth=wdt; g.beginPath(); pts.forEach((c,i)=>{ const q=P(c); i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]); }); if (close) g.closePath(); g.stroke(); };
-  (r.outline||[]).forEach(o => poly(o, legCol, 2.5, true));
+  (r.outline||[]).forEach(o => poly(o, css("--leg"), 2.5, true));
   if (r.card) poly(r.card, css("--card"), 3, true);
-  const line = l => { if (!l) return; poly(l, tape, 3.5, false); l.forEach(p=>{ const q=P(p); g.fillStyle=tape; g.beginPath(); g.arc(q[0],q[1],5,0,7); g.fill(); }); };
-  if (r.side) line(r.side.footLine);
-  if (r.foot) line(r.foot.widthLine);
-  if (r.needSeed){
-    cv.style.cursor="crosshair";
-    cv.onclick = async e => { const b=cv.getBoundingClientRect(); const x=(e.clientX-b.left)/disp, y=(e.clientY-b.top)/disp;
-      S.res[key]=null; captureScreen(key); await runAnalysis(key, [x,y]); };
+  if (r.foot && r.foot.widthLine){ poly(r.foot.widthLine, tape, 3.5, false); }
+  if (key === "side" && S.kneeTap){
+    const q = P(S.kneeTap); g.strokeStyle = tape; g.fillStyle = tape; g.lineWidth = 3;
+    g.beginPath(); g.arc(q[0], q[1], 9, 0, 7); g.stroke(); g.beginPath(); g.arc(q[0], q[1], 3, 0, 7); g.fill();
+  }
+  const kneeStep = r.ok && needsKnee(key);
+  if (r.needSeed || kneeStep){
+    cv.style.cursor = "crosshair";
+    cv.onclick = async e => {
+      const b = cv.getBoundingClientRect(), x = (e.clientX-b.left)/disp, y = (e.clientY-b.top)/disp;
+      if (r.needSeed){ S.res[key]=null; captureScreen(key); await runAnalysis(key, [x,y]); return; }
+      const full = [x*r.fs, y*r.fs], h = LegScan.heightAt(r, full);
+      if (h == null || h < 200 || h > 700){ toast("That point isn't at knee height. Tap the bump just below the kneecap."); return; }
+      S.kneeTap = full; S.legLen = h; captureScreen(key);
+    };
   }
 }
 async function runAnalysis(key, seed){
   try { S.res[key] = await LegScan.analyzePhoto(S.photo[key], key, { file: S.file[key], seed }); }
   catch(err){ S.res[key] = { ok:false, checks:[{ s:"bad", t:"Something went wrong reading this photo", fix:"Try again, or try another photo taken with the phone's camera." }] }; }
-  if (S.screen===key) captureScreen(key);
+  if (S.screen === key) captureScreen(key);
 }
 async function setPhoto(key, img, file){
-  S.photo[key]=img; S.file[key]=file; S.res[key]=null; captureScreen(key);
-  await runAnalysis(key, null);
+  S.photo[key] = img; S.file[key] = file; S.res[key] = null; if (key === "side"){ S.kneeTap = null; S.legLen = null; }
+  captureScreen(key); await runAnalysis(key, null);
 }
 document.addEventListener("change", e => {
-  const k = e.target.dataset && e.target.dataset.file; if (!k) return; const f=e.target.files[0]; if (!f) return;
-  const img=new Image(); img.onload=()=>setPhoto(k,img,f); img.onerror=()=>toast("That file couldn't be opened as a photo."); img.src=URL.createObjectURL(f);
+  const k = e.target.dataset && e.target.dataset.file; if (!k) return; const f = e.target.files[0]; if (!f) return;
+  const img = new Image(); img.onload = () => setPhoto(k, img, f); img.onerror = () => toast("That file couldn't be opened as a photo."); img.src = URL.createObjectURL(f);
 });
 
-/* ===================== RESULTS ===================== */
+/* ---------- combine photos into measurements ---------- */
+function interp(prof, h){ if (!prof || !prof.length || h<prof[0].h || h>prof[prof.length-1].h) return null;
+  let lo=0, hi=prof.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if (prof[m].h<=h) lo=m; else hi=m; }
+  const a=prof[lo], b=prof[hi]; return b.h===a.h ? a.w : a.w+(b.w-a.w)*(h-a.h)/(b.h-a.h); }
+function oval(w,d){ const a=w/2,b=d/2,q=((a-b)/(a+b))**2; return Math.PI*(a+b)*(1+3*q/(10+Math.sqrt(4-3*q))); }
+function combine(){
+  const out = {}, f = S.res.front && S.res.front.front, s = S.res.side && S.res.side.side;
+  if (f && s && f.prof.length && s.prof.length){
+    const top = Math.min(f.top, s.top) - 10, curve = [];
+    for (let h = 60; h <= top; h += 5){ const w = interp(f.prof,h), d = interp(s.prof,h); if (w!=null && d!=null) curve.push({ h, c: oval(w,d) }); }
+    out.curve = curve;
+    const band = (a,b) => curve.filter(p => p.h>=a && p.h<=b);
+    const ab = band(60, 200); if (ab.length) out.ankle = ab.reduce((m,p)=>p.c<m.c?p:m);
+    const cb = band(200, 480); if (cb.length && top >= 250) out.calf = cb.reduce((m,p)=>p.c>m.c?p:m);
+  }
+  if (s && s.footLen) out.footLen = s.footLen;
+  const ft = S.res.foot && S.res.foot.foot; if (ft) out.footWid = ft.width;
+  if (S.legLen) out.legLen = S.legLen;
+  return out;
+}
+
+/* ---------- results ---------- */
 function results(){
-  const R = combine(); S.combined = R;
-  const m = (k, v, h, extra) => v==null ? `<div class="metric empty"><span class="k">${k}</span><span class="v">${extra||"Not measured"}</span></div>`
-    : `<div class="metric"><span class="k">${k}</span><span class="v">${(v/10).toFixed(1)}<small>cm</small></span><span class="h">${h}</span></div>`;
-  $("metrics").innerHTML =
-    m("Ankle circumference", R.ankle&&R.ankle.c, R.ankle?`Narrowest point, ${(R.ankle.h/10).toFixed(1)} cm up`:"", "Needs front and side") +
-    m("Calf circumference", R.calf&&R.calf.c, R.calf?`Widest point, ${(R.calf.h/10).toFixed(1)} cm up`:"", R.curve?"Calf not in photo":"Needs front and side") +
-    m("Foot length", R.footLen, "Heel to longest toe", "Foot skipped") +
-    m("Foot width", R.footWid, "Widest part of the foot", "Foot skipped");
-  $("chart").innerHTML = R.curve && R.curve.length>2 ? chart(R) : `<p class="empty">The chart needs both leg photos.</p>`;
-  const items = [["ankle","Ankle",R.ankle&&R.ankle.c],["calf","Calf",R.calf&&R.calf.c],["flen","Foot length",R.footLen],["fwid","Foot width",R.footWid]].filter(x=>x[2]!=null);
-  $("cmp").innerHTML = items.length ? `<div class="cmp small muted"><span>Measure</span><span style="text-align:right">App mm</span><span style="text-align:right">Tape mm</span></div>` +
-    items.map(([id,n,v])=>`<div class="cmp"><span>${n}</span><span class="n" style="text-align:right;font-family:var(--f-mono)">${v.toFixed(1)}</span><input id="t-${id}" inputmode="decimal" aria-label="Tape value for ${n}" placeholder="mm"></div>`).join("") : `<p class="empty">Nothing measured yet.</p>`;
+  const R = combine(); S.combined = R; const P = product, sizes = P.sizes || [];
+  $("res-label").textContent = P.name;
+  const code = i => sizes[i] ? sizes[i].name : "";
+  let rec = "";
+  if (P.rules === "ankleCalf"){
+    if (R.ankle && R.calf){
+      const z = Sizing.ankleCalf(P, cm(R.ankle.c), cm(R.calf.c)); S.sizing = z;
+      const L = Sizing.lengthOf(P, R.legLen != null ? cm(R.legLen) : null);
+      const lenTxt = !L ? `<span class="small">Leg length not measured, so Regular or Tall can't be recommended.</span>`
+        : L.index < 0 ? `<span class="small"><b>Leg length is outside the Regular and Tall ranges.</b></span>`
+        : `<span class="small">Length: <b>${P.lengths[L.index].name}</b> (${rangeTxt(P.lengths[L.index])})</span>`;
+      S.lenIdx = L ? L.index : null;
+      const betweenNotes = [["Ankle", z.ankleSizes], ["Calf", z.calfSizes]].filter(([,a]) => a.length > 1)
+        .map(([n,a]) => `<span class="small"><b>${n} is between sizes:</b> it fits both ${a.map(i => sizes[i].name).join(" and ")}.</span>`).join("");
+      if (z.outcome === "size"){
+        rec = `<div class="rec ${betweenNotes ? "physician" : ""}"><span class="label">${betweenNotes ? "Suggested size · between sizes" : "Recommended size"}</span><span class="big">${code(z.size)}${L && L.index>=0 ? " · " + P.lengths[L.index].name : ""}</span><span>${z.reason}</span>${betweenNotes}
+          ${betweenNotes ? `<span class="small">The fitting guide points to ${code(z.size)}, but because a measurement is between sizes, make the final determination based on what you believe is best for the patient.</span>` : ""}${lenTxt}</div>`;
+      } else if (z.outcome === "custom"){
+        rec = `<div class="rec custom"><span class="label">Recommended</span><span class="big">Prescribed custom garment only</span><span>${z.reason} Custom prescribed compression wear should be used.</span></div>`;
+      } else {
+        const ch = S.choice;
+        rec = `<div class="rec physician"><span class="label">Between sizes · physician's choice</span><span class="big">${S.confirmed && ch!=null ? code(ch) + (L && L.index>=0 ? " · " + P.lengths[L.index].name : "") : "Your decision"}</span><span>${z.reason}</span>
+          <span class="small">This patient is between sizes. You need to make the final determination based on what you believe is best for the patient. Choose a size:</span>
+          <div class="choices">${z.options.map(i => `<button class="choice" data-choice="${i}" aria-pressed="${ch===i}">${sizes[i].code}</button>`).join("")}</div>
+          <label class="confirm"><input type="checkbox" id="confirmchk" ${S.confirmed ? "checked" : ""} ${ch==null ? "disabled" : ""}><span>I have reviewed these measurements and determined that <b>${ch!=null ? code(ch) : "the selected size"}</b> is best for this patient.</span></label>
+          ${lenTxt}</div>`;
+      }
+    } else rec = `<div class="rec custom"><span class="label">No recommendation yet</span><span>Both the front and side photos are needed to measure the ankle and calf.</span></div>`;
+  }
+  $("recbox").innerHTML = rec + (rec ? `<p class="small muted">Sizes follow the ${P.name} measurement and fitting guide. The clinician makes the final determination for every patient.</p>` : "");
+  document.querySelectorAll("[data-choice]").forEach(b => b.onclick = () => { S.choice = +b.dataset.choice; S.confirmed = false; results(); });
+  const chk = $("confirmchk"); if (chk) chk.onchange = () => { S.confirmed = chk.checked; results(); };
+
+  const z = S.sizing || {};
+  const sizeList = arr => arr && arr.length ? arr.map(i => sizes[i].code).join(" / ") + (arr.length > 1 ? " (between sizes)" : "") : "Outside chart";
+  const rows = [];
+  if (P.measures.ankle) rows.push([`${P.measures.ankle.letter} · Ankle`, R.ankle && R.ankle.c, R.ankle ? sizeList(z.ankleSizes) : "", R.ankle ? `${(R.ankle.h/10).toFixed(1)} cm up` : ""]);
+  if (P.measures.calf) rows.push([`${P.measures.calf.letter} · Calf`, R.calf && R.calf.c, R.calf ? sizeList(z.calfSizes) : "", R.calf ? `${(R.calf.h/10).toFixed(1)} cm up` : ""]);
+  if (P.measures.length) rows.push([`${P.measures.length.letter} · Leg length`, R.legLen, S.lenIdx!=null ? (S.lenIdx>=0 ? P.lengths[S.lenIdx].name : "Outside chart") : "", "Floor to knee bump"]);
+  if (R.footLen) rows.push(["Foot length", R.footLen, "", "Heel to toe"]);
+  if (R.footWid) rows.push(["Foot width", R.footWid, "", "Widest part"]);
+  $("mrows").innerHTML = rows.map(([n, v, sz, note]) => `<tr><td>${n}<br><span class="small muted">${note}</span></td><td class="n">${v!=null ? cm(v).toFixed(1) : "–"}</td><td class="n">${v!=null ? inch(v).toFixed(1) : "–"}</td><td class="sz">${v!=null ? sz : "Not measured"}</td></tr>`).join("");
+  $("mnote").textContent = "Ankle is the narrowest point just above the ankle bone. Calf is the widest point of the calf muscle.";
+  $("chart").innerHTML = R.curve && R.curve.length > 2 ? chart(R) : `<p class="empty">The chart needs both the front and side photos.</p>`;
+  const items = [["ankle","Ankle",R.ankle&&R.ankle.c],["calf","Calf",R.calf&&R.calf.c],["len","Leg length",R.legLen],["flen","Foot length",R.footLen]].filter(x=>x[2]!=null);
+  const u = $("cmpunit").value;
+  $("cmp").innerHTML = items.length ? `<div class="cmp small muted"><span>Measure</span><span style="text-align:right">App (${u})</span><span style="text-align:right">Tape (${u})</span></div>` +
+    items.map(([id,n,v])=>`<div class="cmp"><span>${n}</span><span style="text-align:right;font-family:var(--f-mono)">${(u==="cm"?cm(v):inch(v)).toFixed(1)}</span><input id="t-${id}" inputmode="decimal" aria-label="Tape value for ${n} in ${u}" placeholder="${u}"></div>`).join("") : `<p class="empty">Nothing measured yet.</p>`;
   S.cmpItems = items;
 }
+$("cmpunit").onchange = () => results();
 function chart(R){
-  const W=340, H=300, padL=44, padR=14, padT=12, padB=36, c=R.curve;
+  const W=340, H=300, padL=44, padR=14, padT=12, padB=40, c=R.curve;
   const cmin=Math.floor(Math.min(...c.map(p=>p.c))/20)*20, cmax=Math.ceil(Math.max(...c.map(p=>p.c))/20)*20, hmax=Math.ceil(c[c.length-1].h/50)*50;
   const X=v=>padL+(v-cmin)/(cmax-cmin)*(W-padL-padR), Y=h=>H-padB-h/hmax*(H-padT-padB);
   let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Circumference at each height above the floor">`;
-  for (let h=0; h<=hmax; h+=100){ s+=`<line x1="${padL}" x2="${W-padR}" y1="${Y(h)}" y2="${Y(h)}" stroke="var(--line)"/><text x="${padL-6}" y="${Y(h)+4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--f-mono)">${h/10}</text>`; }
-  for (let v=cmin; v<=cmax; v+=40){ s+=`<text x="${X(v)}" y="${H-padB+16}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--f-mono)">${v/10}</text>`; }
-  s+=`<text x="${(padL+W-padR)/2}" y="${H-4}" text-anchor="middle" font-size="11" fill="var(--muted)">Circumference (cm)</text>`;
+  for (let h=0; h<=hmax; h+=100) s+=`<line x1="${padL}" x2="${W-padR}" y1="${Y(h)}" y2="${Y(h)}" stroke="var(--line)"/><text x="${padL-6}" y="${Y(h)+4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--f-mono)">${h/10}</text>`;
+  for (let v=cmin; v<=cmax; v+=40) s+=`<text x="${X(v)}" y="${H-padB+16}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--f-mono)">${v/10}</text>`;
+  s+=`<text x="${(padL+W-padR)/2}" y="${H-6}" text-anchor="middle" font-size="11" fill="var(--muted)">Circumference (cm)</text>`;
   s+=`<text x="12" y="${(H-padB)/2}" text-anchor="middle" font-size="11" fill="var(--muted)" transform="rotate(-90 12 ${(H-padB)/2})">Height above floor (cm)</text>`;
   s+=`<polyline fill="none" stroke="var(--leg)" stroke-width="2.5" points="${c.map(p=>X(p.c).toFixed(1)+","+Y(p.h).toFixed(1)).join(" ")}"/>`;
-  [[R.ankle,"Ankle"],[R.calf,"Calf"]].forEach(([p,n])=>{ if(!p) return; const x=X(p.c), y=Y(p.h), right = x < (padL+W)/2;
-    s+=`<circle cx="${x}" cy="${y}" r="5" fill="var(--tape)" stroke="var(--ink)" stroke-width="1"/><text x="${right?x+9:x-9}" y="${y+4}" text-anchor="${right?"start":"end"}" font-size="12" font-weight="600" fill="var(--ink)">${n} ${(p.c/10).toFixed(1)}</text>`; });
+  [[R.ankle,"A"],[R.calf,"C"]].forEach(([p,n])=>{ if(!p) return; const x=X(p.c), y=Y(p.h), right = x < (padL+W)/2;
+    s+=`<circle cx="${x}" cy="${y}" r="5" fill="var(--tape)" stroke="var(--ink)" stroke-width="1"/><text x="${right?x+9:x-9}" y="${y+4}" text-anchor="${right?"start":"end"}" font-size="12" font-weight="600" fill="var(--ink)">${n} ${(p.c/10).toFixed(1)} cm / ${(p.c/25.4).toFixed(1)} in</text>`; });
   return s+`</svg>`;
 }
 $("cmp-save").onclick = () => {
-  const log = loadLog(), when = new Date().toISOString(); let n=0;
-  (S.cmpItems||[]).forEach(([id,name,v]) => { const t=parseFloat($("t-"+id).value); if (!isFinite(t)) return; log.push({ when, name, app:v, tape:t, sample:S.sample }); n++; });
+  const log = loadLog(), when = new Date().toISOString(), u = $("cmpunit").value; let n = 0;
+  (S.cmpItems||[]).forEach(([id,name,v]) => { const t = parseFloat($("t-"+id).value); if (!isFinite(t)) return;
+    log.push({ when, product: product.short, name, app: v, tape: u==="cm" ? t*10 : t*25.4 }); n++; });
   if (!n){ toast("Enter at least one tape value first."); return; }
-  saveLog(log); (S.cmpItems||[]).forEach(([id])=>$("t-"+id).value=""); toast(`Saved ${n} comparison${n>1?"s":""} to the test log`);
+  saveLog(log); (S.cmpItems||[]).forEach(([id]) => $("t-"+id).value = ""); toast(`Saved ${n} comparison${n>1?"s":""} to the test log`);
 };
 
-/* ===================== LOG ===================== */
+/* ---------- log ---------- */
 function loadLog(){ try { return JSON.parse(localStorage.getItem(LOGKEY)) || []; } catch(e){ return []; } }
 function saveLog(l){ try { localStorage.setItem(LOGKEY, JSON.stringify(l)); } catch(e){} }
-const pill = d => { const a=Math.abs(d); return `<span class="pill ${a<=2?"ok":a<=5?"warn":"bad"}">${a<=2?"✓ ":""}${d>0?"+":""}${d.toFixed(1)} mm</span>`; };
+const pill = d => { const a = Math.abs(d); return `<span class="pill ${a<=2?"ok":a<=5?"warn":"bad"}">${a<=2?"✓ ":""}${d>0?"+":""}${(d/10).toFixed(2)} cm / ${d>0?"+":""}${(d/25.4).toFixed(2)} in</span>`; };
 function renderLog(){
   const log = loadLog();
-  if (!log.length){ $("logsum").innerHTML=""; $("logrows").innerHTML=`<div class="empty">No comparisons yet. After a measurement, open "Compare with a tape measure" on the results screen and enter the tape values.</div>`; return; }
-  const g={}; log.forEach(r=>(g[r.name]=g[r.name]||[]).push(r));
+  if (!log.length){ $("logsum").innerHTML = ""; $("logrows").innerHTML = `<div class="empty">No comparisons yet. On the results screen, open "Compare with a tape measure" and enter the tape values.</div>`; return; }
+  const g = {}; log.forEach(r => (g[r.name] = g[r.name] || []).push(r));
   $("logsum").innerHTML = `<div class="tablewrap"><table><thead><tr><th>Measure</th><th style="text-align:right">Tries</th><th style="text-align:right">Avg error</th><th style="text-align:right">Worst</th><th>Result</th></tr></thead><tbody>${
-    Object.entries(g).map(([n,rs])=>{ const d=rs.map(r=>Math.abs(r.app-r.tape)), avg=d.reduce((a,b)=>a+b,0)/d.length, worst=Math.max(...d);
-      return `<tr><td>${n}</td><td class="n">${rs.length}</td><td class="n">${avg.toFixed(1)} mm</td><td class="n">${worst.toFixed(1)} mm</td><td>${worst<=2?`<span class="pill ok">✓ Within 2 mm</span>`:`<span class="pill bad">✕ Over 2 mm</span>`}</td></tr>`; }).join("")}</tbody></table></div>`;
+    Object.entries(g).map(([n,rs]) => { const d = rs.map(r => Math.abs(r.app-r.tape)), avg = d.reduce((a,b)=>a+b,0)/d.length, worst = Math.max(...d);
+      return `<tr><td>${n}</td><td class="n">${rs.length}</td><td class="n">${(avg/10).toFixed(2)} cm<br>${(avg/25.4).toFixed(2)} in</td><td class="n">${(worst/10).toFixed(2)} cm<br>${(worst/25.4).toFixed(2)} in</td><td>${worst<=2 ? `<span class="pill ok">✓ Within 2 mm</span>` : `<span class="pill bad">✕ Over 2 mm</span>`}</td></tr>`; }).join("")}</tbody></table></div>`;
   $("logrows").innerHTML = `<div class="tablewrap"><table><thead><tr><th>Saved</th><th>Measure</th><th style="text-align:right">App</th><th style="text-align:right">Tape</th><th style="text-align:right">Difference</th></tr></thead><tbody>${
-    log.slice().reverse().slice(0,50).map(r=>`<tr><td>${new Date(r.when).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}${r.sample?" · sample":""}</td><td>${r.name}</td><td class="n">${r.app.toFixed(1)}</td><td class="n">${r.tape.toFixed(1)}</td><td class="n">${pill(r.app-r.tape)}</td></tr>`).join("")}</tbody></table></div>`;
+    log.slice().reverse().slice(0,50).map(r => `<tr><td>${new Date(r.when).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</td><td>${r.name}</td><td class="n">${both(r.app)}</td><td class="n">${both(r.tape)}</td><td class="n">${pill(r.app-r.tape)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 $("log-copy").onclick = async () => {
-  const log=loadLog(); if(!log.length){ toast("The log is empty."); return; }
-  const t=["Saved\tMeasure\tApp mm\tTape mm\tDifference mm\tSample"].concat(log.map(r=>[r.when,r.name,r.app.toFixed(2),r.tape,(r.app-r.tape).toFixed(2),r.sample?"yes":"no"].join("\t"))).join("\n");
+  const log = loadLog(); if (!log.length){ toast("The log is empty."); return; }
+  const t = ["Saved\tProduct\tMeasure\tApp cm\tApp in\tTape cm\tTape in\tDifference cm\tDifference in"].concat(log.map(r => [r.when, r.product||"", r.name, (r.app/10).toFixed(2), (r.app/25.4).toFixed(2), (r.tape/10).toFixed(2), (r.tape/25.4).toFixed(2), ((r.app-r.tape)/10).toFixed(2), ((r.app-r.tape)/25.4).toFixed(2)].join("\t"))).join("\n");
   try { await navigator.clipboard.writeText(t); toast("Copied. Paste it into a spreadsheet."); }
-  catch(e){ const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); toast("Copied. Paste it into a spreadsheet."); }catch(_){ toast("Copying is blocked on this device."); } ta.remove(); }
+  catch(e){ const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast("Copied. Paste it into a spreadsheet."); } catch(_){ toast("Copying is blocked on this device."); } ta.remove(); }
 };
-let arm=0; $("log-clear").onclick = () => { const b=$("log-clear"); if(Date.now()-arm>3000){ arm=Date.now(); b.textContent="Tap again to delete everything"; setTimeout(()=>b.textContent="Clear log",3000); return; } saveLog([]); b.textContent="Clear log"; renderLog(); toast("Log cleared"); };
+let arm = 0; $("log-clear").onclick = () => { const b = $("log-clear"); if (Date.now()-arm > 3000){ arm = Date.now(); b.textContent = "Tap again to delete everything"; setTimeout(() => b.textContent = "Clear log", 3000); return; } saveLog([]); b.textContent = "Clear log"; renderLog(); toast("Log cleared"); };
 
-/* ===================== NAVIGATION ===================== */
+/* ---------- navigation ---------- */
 function show(name){
-  if (name==="results"){ results(); }
-  if (STEPS[name]) captureScreen(name);
-  if (name==="log") renderLog();
-  if (name!=="log") S.prev = name;
-  document.querySelectorAll(".screen").forEach(s=>s.hidden = s.id!=="s-"+name);
+  if (name === "results") results();
+  if (STEP_INFO[name]) captureScreen(name);
+  if (name === "log") renderLog();
+  if (name !== "log") S.prev = name;
+  document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== "s-"+name);
   S.screen = name; window.scrollTo(0,0);
 }
-document.addEventListener("click", e => {
-  const b = e.target.closest("[data-go],[data-back],[data-skip]"); if (!b) return;
-  if (b.dataset.skip!==undefined){ const cur=S.screen; S.photo[cur]=null; S.res[cur]=null; show(b.dataset.skip); return; }
-  show(b.dataset.go || b.dataset.back);
-});
-$("go-start").onclick = () => { S.photo={}; S.file={}; S.res={}; show("setup"); };
-$("go-again").onclick = () => { S.photo={}; S.file={}; S.res={}; show("front"); };
-$("go-own").onclick = () => { S.photo={}; S.file={}; S.res={}; show("front"); };
+document.addEventListener("click", e => { const b = e.target.closest("[data-go],[data-back]"); if (!b || b.disabled) return; show(b.dataset.go || b.dataset.back); });
+const reset = () => { S.photo = {}; S.file = {}; S.res = {}; S.kneeTap = null; S.legLen = null; S.choice = null; S.confirmed = false; S.sizing = null; };
+$("go-start").onclick = () => { if (!product){ toast("Choose a product first."); return; } reset(); show("setup"); };
+$("go-first").onclick = () => show(steps()[0]);
+$("go-again").onclick = () => { reset(); show("home"); };
+$("res-back").onclick = () => show(steps()[steps().length-1]);
 $("go-log").onclick = () => show("log"); $("go-log2").onclick = () => show("log");
 $("log-back").onclick = () => show(S.prev || "home");
-let tt; function toast(m){ const t=$("toast"); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,2600); }
-window.addEventListener("resize", ()=>{ if (STEPS[S.screen]) drawReview(S.screen); });
+let tt; function toast(m){ const t = $("toast"); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 2800); }
+window.addEventListener("resize", () => { if (STEP_INFO[S.screen]) drawReview(S.screen); });
+renderProducts();
 window.__legscan = { S, combine, setPhoto, show };
 })();
 </script>
-
 </body>
 </html>
