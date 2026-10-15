@@ -129,14 +129,19 @@ window.Sizing = (function(){
     return { outcome: "size", candidates: C, size: C[0], reason: `A ${who === "men" ? "men's" : "women's"} size ${size} is in the ${product.sizes[C[0]].name} range.` };
   }
   /* "overlap" products (night garment): a size fits when it covers both the ankle and the calf.
-     One fitting size -> that size. Several -> between sizes, clinician chooses.
+     One fitting size -> that size. Several -> suggest the larger (step down gradually), flagged as between sizes.
      None -> no single size covers both; shown to the clinician to decide. */
   function overlap(product, ankleCm, calfCm){
     const S = product.sizes, A = candidates(S, "ankle", ankleCm), C = candidates(S, "calf", calfCm);
     const both = A.filter(i => C.includes(i)), res = { ankleSizes: A, calfSizes: C, both };
     if (!A.length || !C.length){ res.outcome = "custom"; res.reason = `The ${!A.length ? "ankle" : "calf"} measurement is outside the size chart.`; return res; }
     if (both.length === 1){ res.outcome = "size"; res.size = both[0]; res.reason = `${S[both[0]].name} is the only size that covers both the ankle and the calf.`; return res; }
-    if (both.length > 1){ res.outcome = "physician"; res.options = both; res.reason = `Both the ankle and the calf fit ${both.map(i => S[i].name).join(" and ")}.`; return res; }
+    if (both.length > 1){
+      // Overlapping sizes let the leg step down gradually; start with the larger size so pressure is not raised too quickly.
+      const big = Math.max(...both); res.outcome = "size"; res.size = big; res.between = both;
+      res.reason = `Both the ankle and the calf fit ${both.map(i => S[i].name).join(" and ")}. The larger size is suggested so the leg can step down gradually; moving down more than one size at a time can raise the pressure too quickly.`;
+      return res;
+    }
     res.outcome = "physician"; res.noCommon = true; res.options = Array.from(new Set(A.concat(C))).sort((x,y) => x-y);
     res.reason = "No single size covers both the ankle and the calf.";
     return res;

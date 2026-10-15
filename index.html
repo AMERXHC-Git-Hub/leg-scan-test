@@ -382,11 +382,11 @@ function results(){
         : L.index < 0 ? `<span class="small"><b>Leg length is outside the Regular and Tall ranges.</b></span>`
         : `<span class="small">Length: <b>${P.lengths[L.index].name}</b> (${rangeTxt(P.lengths[L.index])})</span>`;
       S.lenIdx = L ? L.index : null;
-      const betweenNotes = P.rules === "overlap" ? "" : [["Ankle", z.ankleSizes], ["Calf", z.calfSizes]].filter(([,a]) => a.length > 1)
+      const betweenNotes = P.rules === "overlap" ? (z.between ? `<span class="small"><b>Between sizes:</b> this patient fits ${z.between.map(i => sizes[i].name).join(" and ")}.</span>` : "") : [["Ankle", z.ankleSizes], ["Calf", z.calfSizes]].filter(([,a]) => a.length > 1)
         .map(([n,a]) => `<span class="small"><b>${n} is between sizes:</b> it fits both ${a.map(i => sizes[i].name).join(" and ")}.</span>`).join("");
       if (z.outcome === "size"){
         rec = `<div class="rec ${betweenNotes ? "physician" : ""}"><span class="label">${betweenNotes ? "Suggested size · between sizes" : "Recommended size"}</span><span class="big">${code(z.size)}${L && L.index>=0 ? " · " + P.lengths[L.index].name : ""}</span><span>${z.reason}</span>${betweenNotes}
-          ${betweenNotes ? `<span class="small">The fitting guide points to ${code(z.size)}, but because a measurement is between sizes, make the final determination based on what you believe is best for the patient.</span>` : ""}${lenTxt}</div>`;
+          ${betweenNotes ? `<span class="small">The ${P.rules === "overlap" ? "size chart" : "fitting guide"} points to ${code(z.size)}, but because ${P.rules === "overlap" ? "the patient is" : "a measurement is"} between sizes, make the final determination based on what you believe is best for the patient.</span>` : ""}${lenTxt}</div>`;
       } else if (z.outcome === "custom"){
         rec = P.rules === "overlap"
           ? `<div class="rec custom"><span class="label">No standard size</span><span class="big">Outside the size chart</span><span>${z.reason}</span></div>`
