@@ -122,7 +122,8 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
   </div>
   <div class="actions">
     <button class="btn primary" id="go-start">Start measuring</button>
-    <button class="btn" id="go-sample">Try it with sample photos</button>
+    <button class="btn" id="go-own">Use photos already on my phone</button>
+    <button class="btn link" id="go-sample">Watch a demo with drawn example photos</button>
     <button class="btn link" id="go-log">Test log and settings</button>
   </div>
 </div>
@@ -153,7 +154,7 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 <div class="screen" id="s-results" hidden>
   <div class="body">
     <div class="topbar"><button class="back" data-back="foot" aria-label="Back">‹</button><span class="steplabel">Results</span></div>
-    <div id="samplebanner" class="banner" hidden>These results come from computer-drawn sample photos with known sizes, so they show how close the measuring is under ideal conditions.</div>
+    <div id="samplebanner" class="banner" hidden>This was a demo using computer-drawn example photos with known sizes. To measure a real leg, go back to the start and tap "Start measuring" or "Use photos already on my phone."</div>
     <h2>Measurements</h2>
     <div class="metrics" id="metrics"></div>
     <div class="panel">
@@ -519,7 +520,7 @@ function captureScreen(key){
   if (!ph){
     body = `<h2>${st.title}</h2><div class="illus" aria-hidden="true">${st.art}</div>
       <ul class="bullets">${st.tips.map((t,i)=>`<li><b>${i+1}</b><span>${t}</span></li>`).join("")}</ul>
-      <p class="small muted">If the camera doesn't open, take the photo with your camera app, then choose it from your photos.</p>`;
+      <p class="small muted">Already took this photo? Tap "Choose from photos" below to pick it from your phone.</p>`;
     actions = fileBtns(true) + (key==="foot" ? `<button class="btn link" data-skipfoot>Skip the foot</button>` : "");
   } else if (!r){
     body = `<h2>${st.title}</h2><div class="working"><div class="spinner"></div><span>Finding the card and ${st.what}…</span></div>`;
@@ -647,13 +648,14 @@ document.addEventListener("click", e => {
 });
 $("go-start").onclick = () => { S.sample=false; S.photo={}; S.res={}; show("setup"); };
 $("go-again").onclick = () => { S.sample=false; S.photo={}; S.res={}; show("front"); };
+$("go-own").onclick = () => { S.sample=false; S.photo={}; S.res={}; show("front"); };
 $("go-log").onclick = () => show("log"); $("go-log2").onclick = () => show("log");
 $("log-back").onclick = () => show(S.prev || "home");
 $("go-sample").onclick = async () => {
   S.sample=true; S.photo={}; S.res={};
   const b=$("go-sample"); b.disabled=true; b.textContent="Drawing sample photos…";
   const [f,s,ft] = await Promise.all([toImg(sampleLeg("front")), toImg(sampleLeg("side")), toImg(sampleFoot())]);
-  b.disabled=false; b.textContent="Try it with sample photos";
+  b.disabled=false; b.textContent="Watch a demo with drawn example photos";
   S.photo.side=s; S.photo.foot=ft;
   S.res.side = await analyze(s,"leg"); S.res.foot = await analyze(ft,"foot");
   show("front"); setPhoto("front", f);
