@@ -442,6 +442,7 @@ function shoeResults(){
   if (z.outcome === "size") rec = `<div class="rec"><span class="label">Recommended size</span><span class="big">${sizes[z.size].name}</span><span>${z.reason}</span></div>`;
   else if (z.outcome === "custom") rec = `<div class="rec custom"><span class="label">No standard size</span><span class="big">Outside the chart</span><span>${z.reason}</span></div>`;
   else rec = `<div class="rec physician"><span class="label">Between sizes · clinician's choice</span><span class="big">${S.confirmed && ch!=null ? sizes[ch].name : "Your decision"}</span><span>${z.reason} This patient is between sizes. You need to make the final determination based on what you believe is best for the patient. Choose a size:</span>
+      ${z.options.filter(i => sizes[i].note).map(i => `<span class="small"><b>${sizes[i].name}:</b> ${sizes[i].note}</span>`).join("")}
       <div class="choices">${z.options.map(i => `<button class="choice" data-choice="${i}" aria-pressed="${ch===i}">${sizes[i].code}</button>`).join("")}</div>
       <label class="confirm"><input type="checkbox" id="confirmchk" ${S.confirmed ? "checked" : ""} ${ch==null ? "disabled" : ""}><span>I have reviewed the shoe size and determined that <b>${ch!=null ? sizes[ch].name : "the selected size"}</b> is best for this patient.</span></label></div>`;
   $("recbox").innerHTML = rec + `<p class="small muted">Sizes follow the ${P.name} sizing chart. The clinician makes the final determination for every patient.</p>`;

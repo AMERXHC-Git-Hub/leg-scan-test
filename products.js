@@ -64,7 +64,7 @@ window.PRODUCTS = [
       { name: "Medium",      code: "M",   men: [7.5, 9.5],  women: [9, 11] },
       { name: "Large",       code: "L",   men: [9.5, 11.5], women: [11, 13] },
       { name: "Extra Large", code: "XL",  men: [11.5, 13],  women: [13, 14.5] },
-      { name: "XX Large",    code: "XXL", men: [11.5, 15],  women: [13, 15] }
+      { name: "XX Large",    code: "XXL", men: [11.5, 15],  women: [13, 15], note: "Fits the same shoe sizes as Extra Large, with an extra inch of growth room." }
     ]
   },
   { id: "extremit-ease-ankle-foot", name: "Extremit-Ease Ankle and Foot Garment", short: "Ankle and foot (coming soon)", available: false }
