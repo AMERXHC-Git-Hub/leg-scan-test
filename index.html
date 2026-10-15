@@ -157,6 +157,19 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 <div class="screen" id="s-side" hidden></div>
 <div class="screen" id="s-foot" hidden></div>
 
+<!-- SHOE SIZE -->
+<div class="screen" id="s-shoe" hidden>
+  <div class="body">
+    <div class="topbar"><button class="back" data-back="home" aria-label="Back">‹</button><span class="steplabel" id="shoe-label">Shoe size</span></div>
+    <h2>Patient's shoe size</h2>
+    <p>This product is sized by US shoe size. No photos are needed.</p>
+    <div><h3 style="margin-bottom:8px">Shoe size type</h3>
+      <div class="choices" id="shoe-who"><button class="choice" data-who="men" aria-pressed="false">Men's</button><button class="choice" data-who="women" aria-pressed="false">Women's</button></div></div>
+    <div><h3 style="margin-bottom:8px">Shoe size</h3><div class="choices" id="shoe-sizes"></div></div>
+  </div>
+  <div class="actions"><button class="btn primary" id="shoe-go" disabled>Choose type and size</button></div>
+</div>
+
 <!-- RESULTS -->
 <div class="screen" id="s-results" hidden>
   <div class="body">
@@ -164,10 +177,10 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
     <div id="recbox"></div>
     <div class="panel">
       <h3>Measurements</h3>
-      <div class="tablewrap"><table class="mtable"><thead><tr><th>Measure</th><th style="text-align:right">cm</th><th style="text-align:right">in</th><th>Chart</th></tr></thead><tbody id="mrows"></tbody></table></div>
+      <div class="tablewrap"><table class="mtable"><thead id="mhead"></thead><tbody id="mrows"></tbody></table></div>
       <p class="small muted" id="mnote"></p>
     </div>
-    <div class="panel">
+    <div class="panel" id="chartpanel">
       <h3>Circumference up the leg</h3>
       <div class="chartwrap" id="chart"></div>
     </div>
@@ -354,29 +367,34 @@ function combine(){
 
 /* ---------- results ---------- */
 function results(){
+  if (product.rules === "shoe") return shoeResults();
+  $("mhead").innerHTML = `<tr><th>Measure</th><th style="text-align:right">cm</th><th style="text-align:right">in</th><th>Chart</th></tr>`;
+  $("chartpanel").hidden = false; $("cmpbox").hidden = false;
   const R = combine(); S.combined = R; const P = product, sizes = P.sizes || [];
   $("res-label").textContent = P.name;
   const code = i => sizes[i] ? sizes[i].name : "";
   let rec = "";
-  if (P.rules === "ankleCalf"){
+  if (P.rules === "ankleCalf" || P.rules === "overlap"){
     if (R.ankle && R.calf){
-      const z = Sizing.ankleCalf(P, cm(R.ankle.c), cm(R.calf.c)); S.sizing = z;
+      const z = (P.rules === "overlap" ? Sizing.overlap : Sizing.ankleCalf)(P, cm(R.ankle.c), cm(R.calf.c)); S.sizing = z;
       const L = Sizing.lengthOf(P, R.legLen != null ? cm(R.legLen) : null);
-      const lenTxt = !L ? `<span class="small">Leg length not measured, so Regular or Tall can't be recommended.</span>`
+      const lenTxt = !P.lengths ? "" : !L ? `<span class="small">Leg length not measured, so Regular or Tall can't be recommended.</span>`
         : L.index < 0 ? `<span class="small"><b>Leg length is outside the Regular and Tall ranges.</b></span>`
         : `<span class="small">Length: <b>${P.lengths[L.index].name}</b> (${rangeTxt(P.lengths[L.index])})</span>`;
       S.lenIdx = L ? L.index : null;
-      const betweenNotes = [["Ankle", z.ankleSizes], ["Calf", z.calfSizes]].filter(([,a]) => a.length > 1)
+      const betweenNotes = P.rules === "overlap" ? "" : [["Ankle", z.ankleSizes], ["Calf", z.calfSizes]].filter(([,a]) => a.length > 1)
         .map(([n,a]) => `<span class="small"><b>${n} is between sizes:</b> it fits both ${a.map(i => sizes[i].name).join(" and ")}.</span>`).join("");
       if (z.outcome === "size"){
         rec = `<div class="rec ${betweenNotes ? "physician" : ""}"><span class="label">${betweenNotes ? "Suggested size · between sizes" : "Recommended size"}</span><span class="big">${code(z.size)}${L && L.index>=0 ? " · " + P.lengths[L.index].name : ""}</span><span>${z.reason}</span>${betweenNotes}
           ${betweenNotes ? `<span class="small">The fitting guide points to ${code(z.size)}, but because a measurement is between sizes, make the final determination based on what you believe is best for the patient.</span>` : ""}${lenTxt}</div>`;
       } else if (z.outcome === "custom"){
-        rec = `<div class="rec custom"><span class="label">Recommended</span><span class="big">Prescribed custom garment only</span><span>${z.reason} Custom prescribed compression wear should be used.</span></div>`;
+        rec = P.rules === "overlap"
+          ? `<div class="rec custom"><span class="label">No standard size</span><span class="big">Outside the size chart</span><span>${z.reason}</span></div>`
+          : `<div class="rec custom"><span class="label">Recommended</span><span class="big">Prescribed custom garment only</span><span>${z.reason} Custom prescribed compression wear should be used.</span></div>`;
       } else {
         const ch = S.choice;
-        rec = `<div class="rec physician"><span class="label">Between sizes · physician's choice</span><span class="big">${S.confirmed && ch!=null ? code(ch) + (L && L.index>=0 ? " · " + P.lengths[L.index].name : "") : "Your decision"}</span><span>${z.reason}</span>
-          <span class="small">This patient is between sizes. You need to make the final determination based on what you believe is best for the patient. Choose a size:</span>
+        rec = `<div class="rec physician"><span class="label">${z.noCommon ? "No single size fits both · clinician's choice" : "Between sizes · physician's choice"}</span><span class="big">${S.confirmed && ch!=null ? code(ch) + (L && L.index>=0 ? " · " + P.lengths[L.index].name : "") : "Your decision"}</span><span>${z.reason}</span>
+          <span class="small">${z.noCommon ? "The ankle and calf point to different sizes." : "This patient is between sizes."} You need to make the final determination based on what you believe is best for the patient. Choose a size:</span>
           <div class="choices">${z.options.map(i => `<button class="choice" data-choice="${i}" aria-pressed="${ch===i}">${sizes[i].code}</button>`).join("")}</div>
           <label class="confirm"><input type="checkbox" id="confirmchk" ${S.confirmed ? "checked" : ""} ${ch==null ? "disabled" : ""}><span>I have reviewed these measurements and determined that <b>${ch!=null ? code(ch) : "the selected size"}</b> is best for this patient.</span></label>
           ${lenTxt}</div>`;
@@ -405,6 +423,36 @@ function results(){
   S.cmpItems = items;
 }
 $("cmpunit").onchange = () => results();
+
+/* ---------- shoe-size products ---------- */
+function renderShoe(){
+  $("shoe-label").textContent = product.name;
+  const vals = []; for (let v = 4; v <= 16; v += .5) vals.push(v);
+  $("shoe-sizes").innerHTML = vals.map(v => `<button class="choice" data-shoe="${v}" aria-pressed="${S.shoeSize===v}">${v}</button>`).join("");
+  document.querySelectorAll("#shoe-who [data-who]").forEach(b => { b.setAttribute("aria-pressed", S.shoeWho === b.dataset.who); b.onclick = () => { S.shoeWho = b.dataset.who; renderShoe(); }; });
+  document.querySelectorAll("[data-shoe]").forEach(b => b.onclick = () => { S.shoeSize = +b.dataset.shoe; renderShoe(); });
+  const ok = S.shoeWho && S.shoeSize != null, go = $("shoe-go");
+  go.disabled = !ok; go.textContent = ok ? `Get liner size for ${S.shoeWho === "men" ? "men's" : "women's"} ${S.shoeSize}` : "Choose type and size";
+}
+$("shoe-go").onclick = () => { S.choice = null; S.confirmed = false; show("results"); };
+function shoeResults(){
+  const P = product, sizes = P.sizes, z = Sizing.shoe(P, S.shoeWho, S.shoeSize), ch = S.choice;
+  $("res-label").textContent = P.name; $("chartpanel").hidden = true; $("cmpbox").hidden = true;
+  let rec;
+  if (z.outcome === "size") rec = `<div class="rec"><span class="label">Recommended size</span><span class="big">${sizes[z.size].name}</span><span>${z.reason}</span></div>`;
+  else if (z.outcome === "custom") rec = `<div class="rec custom"><span class="label">No standard size</span><span class="big">Outside the chart</span><span>${z.reason}</span></div>`;
+  else rec = `<div class="rec physician"><span class="label">Between sizes · clinician's choice</span><span class="big">${S.confirmed && ch!=null ? sizes[ch].name : "Your decision"}</span><span>${z.reason} This patient is between sizes. You need to make the final determination based on what you believe is best for the patient. Choose a size:</span>
+      <div class="choices">${z.options.map(i => `<button class="choice" data-choice="${i}" aria-pressed="${ch===i}">${sizes[i].code}</button>`).join("")}</div>
+      <label class="confirm"><input type="checkbox" id="confirmchk" ${S.confirmed ? "checked" : ""} ${ch==null ? "disabled" : ""}><span>I have reviewed the shoe size and determined that <b>${ch!=null ? sizes[ch].name : "the selected size"}</b> is best for this patient.</span></label></div>`;
+  $("recbox").innerHTML = rec + `<p class="small muted">Sizes follow the ${P.name} sizing chart. The clinician makes the final determination for every patient.</p>`;
+  document.querySelectorAll("[data-choice]").forEach(b => b.onclick = () => { S.choice = +b.dataset.choice; S.confirmed = false; shoeResults(); });
+  const chk = $("confirmchk"); if (chk) chk.onchange = () => { S.confirmed = chk.checked; shoeResults(); };
+  const who = S.shoeWho;
+  $("mhead").innerHTML = `<tr><th>Size</th><th style="text-align:right" colspan="2">Shoe size</th><th>Fits</th></tr>`;
+  $("mrows").innerHTML = `<tr><td>Shoe size<br><span class="small muted">US ${who === "men" ? "men's" : "women's"}</span></td><td class="n" colspan="2"><b>${S.shoeSize}</b></td><td class="sz">${z.candidates.length ? z.candidates.map(i => sizes[i].code).join(" / ") + (z.candidates.length > 1 ? " (between sizes)" : "") : "Outside chart"}</td></tr>` +
+    sizes.map((s,i) => `<tr><td class="small muted">${s.name}</td><td class="n small muted" colspan="2">${s[who][0]}–${s[who][1]}</td><td class="small muted">${z.candidates.includes(i) ? "◀ fits" : ""}</td></tr>`).join("");
+  $("mnote").textContent = `US ${who === "men" ? "men's" : "women's"} shoe size ranges from the chart.`;
+}
 function chart(R){
   const W=340, H=300, padL=44, padR=14, padT=12, padB=40, c=R.curve;
   const cmin=Math.floor(Math.min(...c.map(p=>p.c))/20)*20, cmax=Math.ceil(Math.max(...c.map(p=>p.c))/20)*20, hmax=Math.ceil(c[c.length-1].h/50)*50;
@@ -453,17 +501,18 @@ let arm = 0; $("log-clear").onclick = () => { const b = $("log-clear"); if (Date
 function show(name){
   if (name === "results") results();
   if (STEP_INFO[name]) captureScreen(name);
+  if (name === "shoe") renderShoe();
   if (name === "log") renderLog();
   if (name !== "log") S.prev = name;
   document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== "s-"+name);
   S.screen = name; window.scrollTo(0,0);
 }
 document.addEventListener("click", e => { const b = e.target.closest("[data-go],[data-back]"); if (!b || b.disabled) return; show(b.dataset.go || b.dataset.back); });
-const reset = () => { S.photo = {}; S.file = {}; S.res = {}; S.kneeTap = null; S.legLen = null; S.choice = null; S.confirmed = false; S.sizing = null; };
-$("go-start").onclick = () => { if (!product){ toast("Choose a product first."); return; } reset(); show("setup"); };
+const reset = () => { S.shoeWho = null; S.shoeSize = null; S.photo = {}; S.file = {}; S.res = {}; S.kneeTap = null; S.legLen = null; S.choice = null; S.confirmed = false; S.sizing = null; };
+$("go-start").onclick = () => { if (!product){ toast("Choose a product first."); return; } reset(); show(product.rules === "shoe" ? "shoe" : "setup"); };
 $("go-first").onclick = () => show(steps()[0]);
 $("go-again").onclick = () => { reset(); show("home"); };
-$("res-back").onclick = () => show(steps()[steps().length-1]);
+$("res-back").onclick = () => show(product.rules === "shoe" ? "shoe" : steps()[steps().length-1]);
 $("go-log").onclick = () => show("log"); $("go-log2").onclick = () => show("log");
 $("log-back").onclick = () => show(S.prev || "home");
 let tt; function toast(m){ const t = $("toast"); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 2800); }

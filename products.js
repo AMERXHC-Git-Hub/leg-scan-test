@@ -34,8 +34,39 @@ window.PRODUCTS = [
       { name: "Tall",    cm: [44, 51], in: [17.5, 20] }
     ]
   },
-  { id: "extremit-ease-night",  name: "Extremit-Ease Night Garment",            short: "Night garment", available: false },
-  { id: "extremit-ease-liner",  name: "Extremit-Ease Liner",                    short: "Liner",         available: false },
+  {
+    id: "extremit-ease-night",
+    name: "Extremit-Ease Night Garment",
+    short: "Night garment · ankle and calf",
+    available: true,
+    photos: ["front", "side"],
+    rules: "overlap",
+    measures: {
+      ankle: { letter: "A", label: "Ankle", where: "Just above the ankle" },
+      calf:  { letter: "C", label: "Calf",  where: "Widest part of the calf muscle" }
+    },
+    sizes: [
+      { name: "Size 3", code: "3", ankle: { cm: [25, 33], in: [10, 13] }, calf: { cm: [37, 47], in: [14.5, 18.5] } },
+      { name: "Size 4", code: "4", ankle: { cm: [28, 35], in: [11, 14] }, calf: { cm: [41, 52], in: [16, 20.5] } },
+      { name: "Size 5", code: "5", ankle: { cm: [33, 41], in: [13, 16] }, calf: { cm: [44, 57], in: [17.5, 22.5] } },
+      { name: "Size 6", code: "6", ankle: { cm: [38, 43], in: [15, 17] }, calf: { cm: [48, 60], in: [19, 24] } }
+    ]
+  },
+  {
+    id: "extremit-ease-liner",
+    name: "Extremit-Ease Liner",
+    short: "Liner · sized by shoe size",
+    available: true,
+    photos: [],
+    rules: "shoe",
+    sizes: [
+      { name: "Small",       code: "S",   men: [5.5, 7.5],  women: [7, 9] },
+      { name: "Medium",      code: "M",   men: [7.5, 9.5],  women: [9, 11] },
+      { name: "Large",       code: "L",   men: [9.5, 11.5], women: [11, 13] },
+      { name: "Extra Large", code: "XL",  men: [11.5, 13],  women: [13, 14.5] },
+      { name: "XX Large",    code: "XXL", men: [11.5, 15],  women: [13, 15] }
+    ]
+  },
   { id: "extremit-ease-ankle-foot", name: "Extremit-Ease Ankle and Foot Garment", short: "Ankle and foot (coming soon)", available: false }
 ];
 
@@ -90,5 +121,25 @@ window.Sizing = (function(){
     for (let i = L.length - 1; i >= 0; i--){ const [lo, hi] = L[i].cm; if (v >= lo && v <= hi) return { index: i }; }
     return { index: -1 };
   }
-  return { candidates, ankleCalf, lengthOf };
+  /* Shoe-size products: a shoe size inside more than one size range is between sizes, and the clinician chooses. */
+  function shoe(product, who, size){
+    const C = []; product.sizes.forEach((s, i) => { const r = s[who]; if (size >= r[0] && size <= r[1]) C.push(i); });
+    if (!C.length) return { outcome: "custom", candidates: C, reason: "This shoe size is outside the liner size chart." };
+    if (C.length > 1) return { outcome: "physician", candidates: C, options: C, reason: `A ${who === "men" ? "men's" : "women's"} size ${size} fits more than one liner size.` };
+    return { outcome: "size", candidates: C, size: C[0], reason: `A ${who === "men" ? "men's" : "women's"} size ${size} is in the ${product.sizes[C[0]].name} range.` };
+  }
+  /* "overlap" products (night garment): a size fits when it covers both the ankle and the calf.
+     One fitting size -> that size. Several -> between sizes, clinician chooses.
+     None -> no single size covers both; shown to the clinician to decide. */
+  function overlap(product, ankleCm, calfCm){
+    const S = product.sizes, A = candidates(S, "ankle", ankleCm), C = candidates(S, "calf", calfCm);
+    const both = A.filter(i => C.includes(i)), res = { ankleSizes: A, calfSizes: C, both };
+    if (!A.length || !C.length){ res.outcome = "custom"; res.reason = `The ${!A.length ? "ankle" : "calf"} measurement is outside the size chart.`; return res; }
+    if (both.length === 1){ res.outcome = "size"; res.size = both[0]; res.reason = `${S[both[0]].name} is the only size that covers both the ankle and the calf.`; return res; }
+    if (both.length > 1){ res.outcome = "physician"; res.options = both; res.reason = `Both the ankle and the calf fit ${both.map(i => S[i].name).join(" and ")}.`; return res; }
+    res.outcome = "physician"; res.noCommon = true; res.options = Array.from(new Set(A.concat(C))).sort((x,y) => x-y);
+    res.reason = "No single size covers both the ankle and the calf.";
+    return res;
+  }
+  return { candidates, ankleCalf, lengthOf, shoe, overlap };
 })();
