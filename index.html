@@ -106,24 +106,24 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
   <div class="body" style="padding-top:24px">
     <div class="hero-rule" aria-hidden="true"></div>
     <h1>Leg Scan Field Test</h1>
-    <p>Three photos and a bank card. The app finds the leg and foot on its own and measures ankle and calf circumference, foot length and foot width.</p>
+    <p>Three photos and a card on the floor. The app finds the leg and foot on its own and measures ankle and calf circumference, foot length and foot width.</p>
     <div class="illus" aria-hidden="true">
       <svg viewBox="0 0 300 170" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M60 10 C56 50 66 70 60 100 C56 118 58 132 62 142 L46 150 C40 154 44 160 52 160 L86 160 C92 158 90 150 84 146 L80 140 C84 120 86 104 82 84 C78 60 84 36 80 10"/>
-        <rect x="88" y="62" width="34" height="22" rx="2" stroke="var(--card)"/>
+        <path d="M90 150 L118 150 L122 162 L92 162 Z" stroke="var(--card)"/>
         <path d="M150 20 C146 56 156 76 150 104 C147 120 148 134 150 142 L146 156 L232 158 C240 156 238 148 228 146 L184 138 C180 118 184 100 180 84 C176 58 182 36 178 20"/>
-        <rect x="186" y="66" width="22" height="34" rx="2" stroke="var(--card)"/>
+        <path d="M160 162 L196 162 L200 168 L162 168 Z" stroke="var(--card)"/>
         <path d="M30 164 H270" stroke="var(--muted)"/>
         <path d="M256 30 c14 0 22 10 22 30 c0 22 -6 40 -12 52 c-6 12 -22 12 -26 0 c-6 -14 -6 -40 -2 -56 c2 -16 8 -26 18 -26z" />
         <rect x="236" y="120" width="34" height="22" rx="2" stroke="var(--card)" transform="rotate(-8 253 131)"/>
       </svg>
     </div>
     <p class="small muted">Photos are measured on this phone and never uploaded.</p>
+    <p class="small muted" id="toolstatus">Loading the measuring tools…</p>
   </div>
   <div class="actions">
     <button class="btn primary" id="go-start">Start measuring</button>
     <button class="btn" id="go-own">Use photos already on my phone</button>
-    <button class="btn link" id="go-sample">Watch a demo with drawn example photos</button>
     <button class="btn link" id="go-log">Test log and settings</button>
   </div>
 </div>
@@ -135,9 +135,9 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
     <h2>Get set up</h2>
     <div class="list">
       <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="44" height="34" rx="2"/><path d="M6 46h44"/></svg>
-        <p><b>Plain wall and floor.</b> Stand in front of a wall with no pattern. Bare leg, shorts or rolled-up pants.</p></div>
+        <p><b>Any room is fine.</b> Bare leg or tight leggings. Loose pants or socks will be measured as part of the leg.</p></div>
       <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><rect x="10" y="16" width="36" height="24" rx="3" stroke="var(--card)"/><path d="M10 22h36" stroke="var(--card)"/></svg>
-        <p><b>Any bank, gift or ID card.</b> Show the back, so no card number is in the photo.</p></div>
+        <p><b>A standard-size card, flat on the floor.</b> Any bank, gift or ID card. Lay it face down so no card number is in the photo. A light-colored back works best on dark floors.</p></div>
       <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="14" r="5"/><path d="M18 19v16M18 35l-6 14M18 35l6 14M10 26h16"/><rect x="34" y="20" width="12" height="20" rx="2"/></svg>
         <p><b>A helper takes the photos.</b> The person being measured stands still with weight on both feet.</p></div>
     </div>
@@ -154,8 +154,7 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 <div class="screen" id="s-results" hidden>
   <div class="body">
     <div class="topbar"><button class="back" data-back="foot" aria-label="Back">‹</button><span class="steplabel">Results</span></div>
-    <div id="samplebanner" class="banner" hidden>This was a demo using computer-drawn example photos with known sizes. To measure a real leg, go back to the start and tap "Start measuring" or "Use photos already on my phone."</div>
-    <h2>Measurements</h2>
+        <h2>Measurements</h2>
     <div class="metrics" id="metrics"></div>
     <div class="panel">
       <h3>Circumference up the leg</h3>
@@ -190,6 +189,8 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
+<script src="opencv.js" async></script>
+<script src="pipeline.js"></script>
 
 <script>
 (function(){
@@ -197,319 +198,46 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 const CARD_W = 85.60, CARD_H = 53.98, LOGKEY = "legscan.v2.log";
 const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const S = { screen: "home", prev: "home", photo: {}, res: {}, sample: false };
-
-/* ===================== IMAGE ANALYSIS ===================== */
-function raster(img, maxDim){
-  const s = Math.min(1, maxDim/Math.max(img.naturalWidth, img.naturalHeight));
-  const w = Math.max(1, Math.round(img.naturalWidth*s)), h = Math.max(1, Math.round(img.naturalHeight*s));
-  const c = document.createElement("canvas"); c.width = w; c.height = h;
-  const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0, w, h);
-  return { w, h, d: g.getImageData(0, 0, w, h).data, s };
-}
-function col(F, x, y){
-  x = Math.max(0, Math.min(F.w-1.001, x)); y = Math.max(0, Math.min(F.h-1.001, y));
-  const x0 = x|0, y0 = y|0, fx = x-x0, fy = y-y0, i = (y0*F.w+x0)*4, j = i+F.w*4, d = F.d;
-  const o = [0,0,0];
-  for (let c=0;c<3;c++) o[c] = (d[i+c]*(1-fx)+d[i+4+c]*fx)*(1-fy) + (d[j+c]*(1-fx)+d[j+4+c]*fx)*fy;
-  return o;
-}
-function med(a){ const b = Float64Array.from(a).sort(); return b.length ? b[b.length>>1] : 0; }
-function regionColor(Sm, x0, y0, x1, y1){
-  const r=[],g=[],b=[];
-  for (let y=y0;y<y1;y+=1) for (let x=x0;x<x1;x+=1){ const i=(y*Sm.w+x)*4; r.push(Sm.d[i]); g.push(Sm.d[i+1]); b.push(Sm.d[i+2]); }
-  return [med(r),med(g),med(b)];
-}
-const cdist = (d,i,c) => Math.hypot(d[i]-c[0], d[i+1]-c[1], d[i+2]-c[2]);
-function isSkin(r,g,b){ const Y=.299*r+.587*g+.114*b, Cr=(r-Y)*.713+128, Cb=(b-Y)*.564+128; return Y>35 && Cr>=135 && Cr<=182 && Cb>=78 && Cb<=130; }
-function morph(m, w, h, dil){
-  const o = new Uint8Array(w*h);
-  for (let y=1;y<h-1;y++) for (let x=1;x<w-1;x++){
-    const i=y*w+x; let v = dil ? 0 : 1;
-    for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){ const q=m[i+dy*w+dx]; if (dil && q) v=1; if (!dil && !q) v=0; }
-    o[i]=v;
-  }
-  return o;
-}
-const clean = (m,w,h) => morph(morph(morph(morph(m,w,h,true),w,h,false),w,h,false),w,h,true);
-function label(m, w, h){
-  const lab = new Int32Array(w*h), comps = [], st = new Int32Array(w*h);
-  for (let s=0;s<w*h;s++){
-    if (!m[s] || lab[s]) continue;
-    const id = comps.length+1; let sp=0; st[sp++]=s; lab[s]=id;
-    const c = { id, n:0, sx:0, sy:0, sxx:0, syy:0, sxy:0, minx:w, maxx:0, miny:h, maxy:0 };
-    while (sp){
-      const i = st[--sp], x = i%w, y = (i/w)|0;
-      c.n++; c.sx+=x; c.sy+=y; c.sxx+=x*x; c.syy+=y*y; c.sxy+=x*y;
-      if (x<c.minx) c.minx=x; if (x>c.maxx) c.maxx=x; if (y<c.miny) c.miny=y; if (y>c.maxy) c.maxy=y;
-      if (x>0 && m[i-1] && !lab[i-1]) { lab[i-1]=id; st[sp++]=i-1; }
-      if (x<w-1 && m[i+1] && !lab[i+1]) { lab[i+1]=id; st[sp++]=i+1; }
-      if (y>0 && m[i-w] && !lab[i-w]) { lab[i-w]=id; st[sp++]=i-w; }
-      if (y<h-1 && m[i+w] && !lab[i+w]) { lab[i+w]=id; st[sp++]=i+w; }
-    }
-    comps.push(c);
-  }
-  return { lab, comps };
-}
-function rectFit(lab, w, c){
-  const mx=c.sx/c.n, my=c.sy/c.n, cxx=c.sxx/c.n-mx*mx, cyy=c.syy/c.n-my*my, cxy=c.sxy/c.n-mx*my;
-  const th = .5*Math.atan2(2*cxy, cxx-cyy); let u=[Math.cos(th),Math.sin(th)], v=[-Math.sin(th),Math.cos(th)];
-  let mnu=1e9,mxu=-1e9,mnv=1e9,mxv=-1e9;
-  for (let y=c.miny;y<=c.maxy;y++) for (let x=c.minx;x<=c.maxx;x++){
-    if (lab[y*w+x]!==c.id) continue; const dx=x-mx, dy=y-my, pu=dx*u[0]+dy*u[1], pv=dx*v[0]+dy*v[1];
-    if(pu<mnu)mnu=pu; if(pu>mxu)mxu=pu; if(pv<mnv)mnv=pv; if(pv>mxv)mxv=pv;
-  }
-  let a=(mxu-mnu+1)/2, b=(mxv-mnv+1)/2;
-  const cx = mx + (mxu+mnu)/2*u[0] + (mxv+mnv)/2*v[0], cy = my + (mxu+mnu)/2*u[1] + (mxv+mnv)/2*v[1];
-  if (a<b){ [a,b]=[b,a]; [u,v]=[v,[-u[0],-u[1]]]; }
-  const P = [[-a,-b],[a,-b],[a,b],[-a,b]].map(([p,q]) => [cx+p*u[0]+q*v[0], cy+p*u[1]+q*v[1]]);
-  return { c:[cx,cy], P, rect: c.n/(4*a*b), aspect: a/b, a, b };
-}
-function refineEdge(F, p, n, r){
-  const ss=[], gs=[];
-  for (let s=-r; s<=r; s+=.5){
-    const c1 = col(F, p[0]+(s+.75)*n[0], p[1]+(s+.75)*n[1]), c0 = col(F, p[0]+(s-.75)*n[0], p[1]+(s-.75)*n[1]);
-    ss.push(s); gs.push(Math.abs(c1[0]-c0[0])+Math.abs(c1[1]-c0[1])+Math.abs(c1[2]-c0[2]));
-  }
-  let bi=0; for (let i=1;i<gs.length;i++) if (gs[i]>gs[bi]) bi=i;
-  let s = ss[bi];
-  if (bi>0 && bi<gs.length-1){ const a=gs[bi-1], b=gs[bi], c=gs[bi+1], den=a-2*b+c; if (den<0) s += .5*(.5*(a-c)/den); }
-  return { p:[p[0]+s*n[0], p[1]+s*n[1]], g: gs[bi] };
-}
-function fitLine(pts){
-  let P = pts.slice();
-  let L = null;
-  for (let it=0; it<4; it++){
-    if (P.length < 6) return null;
-    let mx=0,my=0; P.forEach(p=>{mx+=p[0];my+=p[1];}); mx/=P.length; my/=P.length;
-    let xx=0,yy=0,xy=0; P.forEach(p=>{const dx=p[0]-mx,dy=p[1]-my; xx+=dx*dx; yy+=dy*dy; xy+=dx*dy;});
-    const ph=.5*Math.atan2(2*xy, xx-yy), d=[Math.cos(ph),Math.sin(ph)], nn=[-d[1],d[0]];
-    L = { m:[mx,my], d };
-    const res = P.map(p => Math.abs((p[0]-mx)*nn[0]+(p[1]-my)*nn[1]));
-    const tol = Math.max(.8, 2.5*med(res));
-    const keep = P.filter((p,i)=>res[i]<=tol);
-    if (keep.length===P.length) break; P = keep;
-  }
-  return L;
-}
-function cross(L1, L2){
-  const det = L1.d[0]*(-L2.d[1]) - L1.d[1]*(-L2.d[0]); if (Math.abs(det)<1e-9) return null;
-  const bx=L2.m[0]-L1.m[0], by=L2.m[1]-L1.m[1], t=(bx*(-L2.d[1]) - by*(-L2.d[0]))/det;
-  return [L1.m[0]+t*L1.d[0], L1.m[1]+t*L1.d[1]];
-}
-function solve(A,b){ const n=b.length;
-  for(let i=0;i<n;i++){ let m=i; for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>Math.abs(A[m][i])) m=r; [A[i],A[m]]=[A[m],A[i]]; [b[i],b[m]]=[b[m],b[i]];
-    if(Math.abs(A[i][i])<1e-12) return null; for(let r=i+1;r<n;r++){ const f=A[r][i]/A[i][i]; for(let c=i;c<n;c++) A[r][c]-=f*A[i][c]; b[r]-=f*b[i]; } }
-  const x=new Array(n); for(let i=n-1;i>=0;i--){ let s=b[i]; for(let c=i+1;c<n;c++) s-=A[i][c]*x[c]; x[i]=s/A[i][i]; } return x; }
-function homog(src, dst){ const A=[],b=[]; for(let i=0;i<4;i++){ const [x,y]=src[i],[u,v]=dst[i];
-  A.push([x,y,1,0,0,0,-u*x,-u*y]); b.push(u); A.push([0,0,0,x,y,1,-v*x,-v*y]); b.push(v); } return solve(A,b); }
-const ap = (h,p) => { const w=h[6]*p[0]+h[7]*p[1]+1; return [(h[0]*p[0]+h[1]*p[1]+h[2])/w, (h[3]*p[0]+h[4]*p[1]+h[5])/w]; };
-const dist = (a,b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
-
-function findCard(Sm, cardMask, k, F, seed){
-  let cand = null;
-  if (seed){
-    const sc = col(Sm, seed[0], seed[1]), m = new Uint8Array(Sm.w*Sm.h);
-    for (let i=0;i<Sm.w*Sm.h;i++) if (cdist(Sm.d,i*4,sc) < 45) m[i]=1;
-    const { lab, comps } = label(clean(m,Sm.w,Sm.h), Sm.w, Sm.h);
-    const id = lab[(seed[1]|0)*Sm.w+(seed[0]|0)];
-    const c = comps.find(c=>c.id===id); if (c && c.n>30) cand = rectFit(lab, Sm.w, c);
-  } else {
-    const { lab, comps } = label(cardMask, Sm.w, Sm.h), N = Sm.w*Sm.h; let best=-1;
-    for (const c of comps){
-      if (c.n < N*.0007 || c.n > N*.25) continue;
-      const r = rectFit(lab, Sm.w, c);
-      if (r.rect < .72 || r.aspect < 1.35 || r.aspect > 1.85) continue;
-      const sc = r.rect*(1-Math.abs(r.aspect-1.586))*c.n;
-      if (sc > best){ best=sc; cand=r; }
-    }
-  }
-  if (!cand) return null;
-  const Q = cand.P.map(p => [(p[0]+.5)*k, (p[1]+.5)*k]), cen = [(cand.c[0]+.5)*k, (cand.c[1]+.5)*k];
-  const r = 1.8*k + 3, lines = [], edgePts = [];
-  for (let i=0;i<4;i++){
-    const A=Q[i], B=Q[(i+1)%4], len=dist(A,B), d=[(B[0]-A[0])/len,(B[1]-A[1])/len];
-    let n=[-d[1],d[0]]; const mid=[(A[0]+B[0])/2,(A[1]+B[1])/2]; if ((mid[0]-cen[0])*n[0]+(mid[1]-cen[1])*n[1] < 0) n=[-n[0],-n[1]];
-    const pts=[];
-    for (let j=0;j<36;j++){ const t=.12+.76*j/35; const e=refineEdge(F,[A[0]+d[0]*len*t, A[1]+d[1]*len*t], n, r); if (e.g>=22) pts.push(e.p); }
-    const L = fitLine(pts); if (!L) return null; lines.push(L); edgePts.push(pts);
-  }
-  const C = [cross(lines[3],lines[0]), cross(lines[0],lines[1]), cross(lines[1],lines[2]), cross(lines[2],lines[3])];
-  if (C.some(c=>!c)) return null;
-  const s = [dist(C[0],C[1]), dist(C[1],C[2]), dist(C[2],C[3]), dist(C[3],C[0])];
-  const H = homog(C, [[0,0],[CARD_W,0],[CARD_W,CARD_H],[0,CARD_H]]); if (!H) return null;
-  const tilt = Math.max(Math.abs(s[0]-s[2])/Math.max(s[0],s[2]), Math.abs(s[1]-s[3])/Math.max(s[1],s[3]));
-  const pxmm = (s[0]+s[2])/(2*CARD_W)*.5 + (s[1]+s[3])/(2*CARD_H)*.5;
-  return { H, C, tilt, pxmm };
-}
-function sharpness(Sm){
-  let s=0,s2=0,n=0; const w=Sm.w, d=Sm.d, Y=i=>.299*d[i]+.587*d[i+1]+.114*d[i+2];
-  for (let y=1;y<Sm.h-1;y+=2) for (let x=1;x<w-1;x+=2){ const i=(y*w+x)*4;
-    const L = 4*Y(i)-Y(i-4)-Y(i+4)-Y(i-w*4)-Y(i+w*4); s+=L; s2+=L*L; n++; }
-  return s2/n-(s/n)**2;
-}
-
-async function analyze(img, mode, seed){
-  await new Promise(r=>setTimeout(r,30));
-  const F = raster(img, 4200), Sm = raster(img, 640), k = F.w/Sm.w, N = Sm.w*Sm.h, w=Sm.w, h=Sm.h;
-  let bgs;
-  if (mode==="foot"){ const bw=Math.max(3,(w*.05)|0), bh=Math.max(3,(h*.05)|0);
-    bgs=[regionColor(Sm,0,0,w,bh), regionColor(Sm,0,h-bh,w,h), regionColor(Sm,0,0,bw,h), regionColor(Sm,w-bw,0,w,h)]; }
-  else bgs=[regionColor(Sm,0,0,w,Math.max(3,(h*.07)|0)), regionColor(Sm,0,h-Math.max(3,(h*.05)|0),w,h)];
-  const fg=new Uint8Array(N), skin=new Uint8Array(N), card=new Uint8Array(N);
-  for (let i=0;i<N;i++){ const q=i*4; let md=1e9; for (const b of bgs) md=Math.min(md, cdist(Sm.d,q,b));
-    if (md>34){ fg[i]=1; if (isSkin(Sm.d[q],Sm.d[q+1],Sm.d[q+2])) skin[i]=1; else card[i]=1; } }
-  const out = { mode, k, fs: F.w/img.naturalWidth, checks: [] };
-  const lap = sharpness(Sm);
-  out.card = findCard(Sm, clean(card,w,h), k, F, seed ? [seed[0]*Sm.s, seed[1]*Sm.s] : null);
-  const skinC = clean(skin,w,h), L = label(skinC, w, h);
-  let body=null, bs=-1;
-  for (const c of L.comps){ if (c.n < N*.01) continue; const sc = c.n*(1-1.2*Math.abs(c.sx/c.n/w-.5)); if (sc>bs){bs=sc; body=c;} }
-  const what = mode==="foot" ? "foot" : "leg";
-  if (!out.card){ out.checks.push({ s:"bad", t:"Card not found", fix:"Tap the card in the photo to point it out, or retake with the whole card showing against the wall or floor." }); out.needSeed = true; }
-  else {
-    out.checks.push({ s:"ok", t:"Card found and used as the ruler" });
-    if (out.card.tilt > .06) out.checks.push({ s:"warn", t:"Card is tilted", fix:"Hold the card flat, facing the camera straight on, and retake." });
-    if (out.card.pxmm < 2.2) out.checks.push({ s:"warn", t:"Too far away for 2 mm accuracy", fix:"Move a step closer and retake." });
-    const camDist = Math.max(F.w,F.h)/(2*Math.tan(33*Math.PI/180)) / out.card.pxmm;
-    if (mode!=="foot" && !img._sample && camDist < 650) out.checks.push({ s:"warn", t:"Too close to the leg", fix:"Step back to about 1 meter and retake. Shooting up close distorts the size." });
-  }
-  if (!body){ out.checks.push({ s:"bad", t:`The ${what} wasn't found`, fix:"Use a plain, light background and make sure the bare skin is in the middle of the photo." }); }
-  else {
-    out.checks.push({ s:"ok", t:`${what==="leg"?"Leg":"Foot"} outline found` });
-    if (mode!=="foot" && (body.minx<=1 || body.maxx>=w-2)) out.checks.push({ s:"warn", t:"The leg touches the edge of the photo", fix:"Step back so there is wall on both sides of the leg." });
-    if (mode==="foot" && (body.minx<=1 || body.maxx>=w-2 || body.miny<=1 || body.maxy>=h-2)) out.checks.push({ s:"warn", t:"The foot touches the edge of the photo", fix:"Hold the phone higher so the whole foot fits with space around it." });
-  }
-  if (lap < 6) out.checks.push({ s:"warn", t:"Photo may be blurry", fix:"Hold the phone steady and tap the screen to focus before taking the photo." });
-  if (!out.card || !body){ out.ok=false; return out; }
-  const H = out.card.H, mm = p => ap(H,p);
-  if (mode==="foot") out.foot = measureFoot(F, Sm, L.lab, body, k, mm);
-  else out.leg = measureLeg(F, Sm, L.lab, body, k, mm);
-  const m = out.foot || out.leg;
-  if (!m){ out.checks.push({ s:"bad", t:"Measurement failed", fix:"Retake the photo with a plain background." }); out.ok=false; return out; }
-  out.ok = !out.checks.some(c=>c.s==="bad");
-  return out;
-}
-function measureLeg(F, Sm, lab, c, k, mm){
-  const w = Sm.w, rows = [];
-  for (let y=c.miny; y<=c.maxy; y++){ let l=-1, r=-1; for (let x=c.minx;x<=c.maxx;x++) if (lab[y*w+x]===c.id){ if(l<0) l=x; r=x; } rows[y]=[l,r]; }
-  const fy = c.maxy, fr = rows[fy], fx = (fr[0]+fr[1]+1)/2*k, FY = (fy+1)*k;
-  const floor = mm([fx,FY]), up0 = mm([fx,FY-200]), ul = dist(up0,floor), up = [(up0[0]-floor[0])/ul, (up0[1]-floor[1])/ul];
-  const prof = [], edges = [], r = 1.5*k+3;
-  for (let y=c.maxy-1; y>=c.miny+1; y--){
-    const sp = rows[y]; if (!sp || sp[0]<0) continue; if (sp[0]<=1 || sp[1]>=w-2) continue;
-    const Y = (y+.5)*k;
-    const eL = refineEdge(F, [sp[0]*k, Y], [-1,0], r), eR = refineEdge(F, [(sp[1]+1)*k, Y], [1,0], r);
-    if (eL.g<18 || eR.g<18) continue;
-    const a = mm(eL.p), b = mm(eR.p), mid = [(a[0]+b[0])/2, (a[1]+b[1])/2];
-    prof.push({ h: (mid[0]-floor[0])*up[0] + (mid[1]-floor[1])*up[1], w: dist(a,b) });
-    edges.push([eL.p, eR.p]);
-  }
-  if (prof.length < 20) return null;
-  prof.sort((a,b)=>a.h-b.h);
-  const sm = prof.map((p,i)=>({ h:p.h, w: med(prof.slice(Math.max(0,i-2), i+3).map(q=>q.w)) }));
-  return { prof: sm, edges, top: sm[sm.length-1].h, floorFull:[fx,FY] };
-}
-function measureFoot(F, Sm, lab, c, k, mm){
-  const w=Sm.w, mx=c.sx/c.n, my=c.sy/c.n, cxx=c.sxx/c.n-mx*mx, cyy=c.syy/c.n-my*my, cxy=c.sxy/c.n-mx*my;
-  const th=.5*Math.atan2(2*cxy,cxx-cyy), u=[Math.cos(th),Math.sin(th)], v=[-u[1],u[0]];
-  let lo=null, hi=null, mn=1e9, mxs=-1e9; const pts=[];
-  for (let y=c.miny;y<=c.maxy;y++) for (let x=c.minx;x<=c.maxx;x++){ if (lab[y*w+x]!==c.id) continue;
-    const s=(x-mx)*u[0]+(y-my)*u[1], t=(x-mx)*v[0]+(y-my)*v[1]; pts.push([s,t,x,y]);
-    if (s<mn){mn=s;lo=[x,y];} if (s>mxs){mxs=s;hi=[x,y];} }
-  const r = 2*k+3, toF = p => [(p[0]+.5)*k, (p[1]+.5)*k];
-  const a = refineEdge(F, toF(lo), [-u[0],-u[1]], r), b = refineEdge(F, toF(hi), u, r);
-  const A = mm(a.p), B = mm(b.p), length = dist(A,B), ax = [(B[0]-A[0])/length, (B[1]-A[1])/length], px = [-ax[1], ax[0]];
-  const bins = 50, span = mxs-mn, bl = new Array(bins).fill(null);
-  for (const p of pts){ const bi=Math.min(bins-1, ((p[0]-mn)/span*bins)|0); const e=bl[bi]||(bl[bi]={mn:1e9,mx:-1e9}); if(p[1]<e.mn){e.mn=p[1];e.lo=[p[2],p[3]];} if(p[1]>e.mx){e.mx=p[1];e.hi=[p[2],p[3]];} }
-  const order = bl.map((e,i)=>[e?e.mx-e.mn:0,i]).sort((x,y)=>y[0]-x[0]).slice(0,6);
-  let width=0, wl=null;
-  for (const [,i] of order){ const e=bl[i]; if(!e) continue;
-    const p1=refineEdge(F, toF(e.lo), [-v[0],-v[1]], r), p2=refineEdge(F, toF(e.hi), v, r);
-    const q1=mm(p1.p), q2=mm(p2.p), wd=Math.abs((q2[0]-q1[0])*px[0]+(q2[1]-q1[1])*px[1]);
-    if (wd>width){ width=wd; wl=[p1.p,p2.p]; } }
-  return { length, width, lenLine:[a.p,b.p], widLine:wl };
-}
+const S = { screen: "home", prev: "home", photo: {}, file: {}, res: {}, sample: false };
+let toolsReady = false;
+LegScan.getCV().then(() => { toolsReady = true; const el = $("toolstatus"); if (el) el.textContent = "Measuring tools ready."; const w = $("workmsg"); if (w) w.textContent = "Finding the card and outline…"; }, () => { const el = $("toolstatus"); if (el) el.textContent = "The measuring tools didn't load. Check the internet connection and reload the page."; });
 
 /* ===================== COMBINE ===================== */
-function interp(prof, h){ if (h<prof[0].h || h>prof[prof.length-1].h) return null;
+const dist = (a,b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
+function interp(prof, h){ if (!prof.length || h<prof[0].h || h>prof[prof.length-1].h) return null;
   let lo=0, hi=prof.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if (prof[m].h<=h) lo=m; else hi=m; }
   const a=prof[lo], b=prof[hi]; return b.h===a.h ? a.w : a.w+(b.w-a.w)*(h-a.h)/(b.h-a.h); }
 function oval(w,d){ const a=w/2,b=d/2,q=((a-b)/(a+b))**2; return Math.PI*(a+b)*(1+3*q/(10+Math.sqrt(4-3*q))); }
 function combine(){
   const out = {};
-  const f = S.res.front && S.res.front.leg, s = S.res.side && S.res.side.leg;
-  if (f && s){
+  const f = S.res.front && S.res.front.front, s = S.res.side && S.res.side.side;
+  if (f && s && f.prof.length && s.prof.length){
     const top = Math.min(f.top, s.top) - 10, curve = [];
     for (let h=60; h<=top; h+=10){ const w=interp(f.prof,h), d=interp(s.prof,h); if (w!=null && d!=null) curve.push({ h, c: oval(w,d), w, d }); }
     out.curve = curve;
     const band = (a,b) => curve.filter(p=>p.h>=a && p.h<=b);
-    const ab = band(60, 200); if (ab.length) out.ankle = ab.reduce((m,p)=>p.c<m.c?p:m);
-    const cb = band(200, 480); if (cb.length && top>=250) out.calf = cb.reduce((m,p)=>p.c>m.c?p:m);
-    [out.ankle, out.calf].forEach(p => { if (!p) return; for (let h=p.h-9; h<=p.h+9; h+=1){ const w=interp(f.prof,h), d=interp(s.prof,h); if (w==null||d==null) continue; const c=oval(w,d);
+    const ab = band(60, 200); if (ab.length) out.ankle = Object.assign({}, ab.reduce((m,p)=>p.c<m.c?p:m));
+    const cb = band(200, 480); if (cb.length && top>=250) out.calf = Object.assign({}, cb.reduce((m,p)=>p.c>m.c?p:m));
+    [out.ankle, out.calf].forEach(p => { if (!p) return; const base=p.h; for (let h=base-9; h<=base+9; h+=1){ const w=interp(f.prof,h), d=interp(s.prof,h); if (w==null||d==null) continue; const c=oval(w,d);
       if ((p===out.ankle && c<p.c) || (p===out.calf && c>p.c)) { p.h=h; p.c=c; p.w=w; p.d=d; } } });
   }
-  const ft = S.res.foot && S.res.foot.foot; if (ft){ out.footLen = ft.length; out.footWid = ft.width; }
+  if (s && s.footLen) out.footLen = s.footLen;
+  const ft = S.res.foot && S.res.foot.foot; if (ft) out.footWid = ft.width;
   return out;
 }
 
-/* ===================== SAMPLE PHOTOS ===================== */
-function keyAt(keys, y){ if (y<=keys[0][0]) return keys[0][1];
-  for (let i=1;i<keys.length;i++) if (y<=keys[i][0]){ const [y0,v0]=keys[i-1],[y1,v1]=keys[i]; const t=(y-y0)/(y1-y0), s=(1-Math.cos(Math.PI*t))/2; return v0+(v1-v0)*s; }
-  return keys[keys.length-1][1]; }
-const FRONT_KEYS = [[0,92],[45,80],[75,68],[110,62],[180,78],[300,106],[330,110],[430,100],[560,98]];
-const SIDE_KEYS  = [[60,96],[85,78],[110,72],[180,84],[300,112],[330,116],[430,104],[560,100]];
-function noise(g, W, H){ const id=g.getImageData(0,0,W,H), d=id.data; for (let i=0;i<d.length;i+=4){ const n=(Math.random()-.5)*10; d[i]+=n; d[i+1]+=n; d[i+2]+=n; } g.putImageData(id,0,0); }
-function drawCard(g, cx, cy, ang, s){
-  g.save(); g.translate(cx,cy); g.rotate(ang); const W=CARD_W*s, Hh=CARD_H*s;
-  g.beginPath(); g.roundRect(-W/2,-Hh/2,W,Hh,3.18*s); g.fillStyle="#26354F"; g.fill();
-  g.fillStyle="#0E1116"; g.fillRect(-W/2,-Hh/2+6*s,W,10*s); g.fillStyle="#DAD6CC"; g.fillRect(-W/2+8*s,-Hh/2+22*s,44*s,8*s); g.restore();
-}
-function sampleLeg(view){
-  const s=3.4, W=1500, H=2000, floorY=1880, cx=700, c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
-  g.fillStyle="#E7E5DF"; g.fillRect(0,0,W,floorY); g.fillStyle="#BFB8AB"; g.fillRect(0,floorY,W,H-floorY);
-  const keys = view==="front" ? FRONT_KEYS : SIDE_KEYS, top=(floorY/s);
-  const gr=g.createLinearGradient(cx-70*s,0,cx+70*s,0); gr.addColorStop(0,"#B7826A"); gr.addColorStop(.45,"#DCAD8F"); gr.addColorStop(1,"#AC7A5E"); g.fillStyle=gr;
-  g.beginPath();
-  const from = view==="front" ? 0 : 60;
-  for (let hm=top; hm>=from; hm-=1) g.lineTo(cx-keyAt(keys,hm)/2*s, floorY-hm*s);
-  for (let hm=from; hm<=top; hm+=1) g.lineTo(cx+keyAt(keys,hm)/2*s, floorY-hm*s);
-  g.closePath(); g.fill();
-  if (view==="side"){ g.beginPath(); g.moveTo(cx-48*s, floorY-70*s); g.bezierCurveTo(cx-62*s,floorY-40*s, cx-62*s,floorY, cx-40*s,floorY);
-    g.lineTo(cx+185*s, floorY); g.bezierCurveTo(cx+200*s,floorY, cx+200*s,floorY-24*s, cx+175*s,floorY-28*s);
-    g.bezierCurveTo(cx+120*s,floorY-36*s, cx+70*s,floorY-60*s, cx+40*s,floorY-80*s); g.closePath(); g.fill(); }
-  const cardH = view==="front" ? 250 : 270, half = keyAt(keys,cardH)/2;
-  drawCard(g, cx + (half + CARD_W/2 + 1.5)*s, floorY-cardH*s, view==="front" ? -.06 : .05, s);
-  noise(g,W,H);
-  g.fillStyle="rgba(0,0,0,.45)"; g.font="600 34px sans-serif"; g.fillText("SAMPLE · "+view.toUpperCase(), 40, 60);
-  return c;
-}
-function sampleFoot(){
-  const s=3.6, W=1500, H=1300, c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
-  g.fillStyle="#CFC9BC"; g.fillRect(0,0,W,H);
-  const cx=620, cy=650; g.fillStyle="#D7A687";
-  g.beginPath(); g.ellipse(cx, cy+80*s, 33*s, 37.5*s, 0, 0, Math.PI*2); g.fill();
-  g.beginPath(); g.ellipse(cx+4*s, cy-45*s, 49*s, 55*s, 0, 0, Math.PI*2); g.fill();
-  g.beginPath(); g.moveTo(cx-33*s, cy+80*s); g.lineTo(cx-45*s, cy-45*s); g.lineTo(cx+53*s, cy-45*s); g.lineTo(cx+33*s, cy+80*s); g.closePath(); g.fill();
-  drawCard(g, cx+150*s, cy+10*s, Math.PI/2+.08, s);
-  noise(g,W,H);
-  g.fillStyle="rgba(0,0,0,.45)"; g.font="600 34px sans-serif"; g.fillText("SAMPLE · FOOT FROM ABOVE", 40, 60);
-  return c;
-}
-const toImg = c => new Promise(r => { const i=new Image(); i._sample=true; i.onload=()=>r(i); i.src=c.toDataURL("image/jpeg",.92); });
-const TRUE = { footLen: 80+37.5+45+55, footWid: 98 };
-
 /* ===================== CAPTURE SCREENS ===================== */
+const FLOOR_ART = (leg, card) => `<svg viewBox="0 0 240 200" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="20" y="8" width="200" height="176" rx="6" stroke="var(--muted)" stroke-dasharray="5 5"/><path d="M20 120 H220" stroke="var(--muted)"/>${leg}<path d="${card}" stroke="var(--card)" stroke-width="2.5"/></svg>`;
 const STEPS = {
   front: { n:1, title:"Front of the leg", next:"side", back:"setup", what:"leg",
-    tips:["Face the leg toward the camera. Only one leg in the photo.","Hold the card upright with its edge touching the side of the leg.","Step back about 1 meter and hold the phone level at calf height. The app will tell you if you're too close or too far."],
-    art:`<svg viewBox="0 0 240 200" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="20" y="8" width="200" height="176" rx="6" stroke="var(--muted)" stroke-dasharray="5 5"/><path d="M98 14 C94 60 104 86 98 120 C95 138 96 150 100 160 L84 170 C78 174 82 180 90 180 L124 180 C130 178 128 170 122 166 L118 160 C122 138 124 120 120 96 C116 66 122 40 118 14"/><rect x="123" y="70" width="40" height="26" rx="3" stroke="var(--card)" stroke-width="2.5"/><path d="M20 184 H220" stroke="var(--muted)"/></svg>` },
+    tips:["Lay the card flat on the floor, right beside the heel.","Face the leg toward the camera. The whole lower leg, the foot and the card should be in the photo.","Stand back about 1 meter. The app checks the distance for you."],
+    art: FLOOR_ART(`<path d="M108 14 C104 50 112 74 108 104 C106 120 106 130 108 140 L100 160 C96 166 102 170 110 170 L126 170 C132 168 130 162 126 158 L122 140 C124 124 126 108 124 88 C122 60 128 36 126 14"/>`, "M134 148 L170 148 L176 166 L138 166 Z") },
   side: { n:2, title:"Side of the leg", next:"foot", back:"front", what:"leg",
-    tips:["Turn the leg so the camera sees the inside or outside of it.","Hold the card upright with its edge touching the front of the shin.","Same distance and height as the front photo. Feet stay planted."],
-    art:`<svg viewBox="0 0 240 200" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="20" y="8" width="200" height="176" rx="6" stroke="var(--muted)" stroke-dasharray="5 5"/><path d="M84 14 C80 56 90 84 84 116 C80 136 80 150 84 162 L80 178 L166 180 C174 178 172 170 162 168 L118 160 C114 140 118 120 114 100 C110 66 116 40 112 14"/><rect x="117" y="64" width="40" height="26" rx="3" stroke="var(--card)" stroke-width="2.5"/><path d="M20 184 H220" stroke="var(--muted)"/></svg>` },
-  foot: { n:3, title:"Foot from above", next:"results", back:"side", what:"foot",
-    tips:["Stand with the foot flat on a plain floor.","Lay the card flat on the floor beside the foot.","Hold the phone straight above the foot, toes pointing to the top of the screen."],
-    art:`<svg viewBox="0 0 240 200" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="20" y="8" width="200" height="176" rx="6" stroke="var(--muted)" stroke-dasharray="5 5"/><path d="M104 30 c22 0 34 16 34 46 c0 30 -8 54 -14 72 c-6 18 -30 18 -34 0 c-6 -22 -8 -52 -4 -76 c2 -26 8 -42 18 -42z"/><rect x="152" y="80" width="26" height="40" rx="3" stroke="var(--card)" stroke-width="2.5"/></svg>` }
+    tips:["Lay the card flat on the floor in front of the foot, between the foot and the phone.","Turn so the camera sees the side of the leg. Feet stay planted.","Fit the whole lower leg, the foot and the card in the photo."],
+    art: FLOOR_ART(`<path d="M84 14 C80 56 90 84 84 116 C80 136 80 146 84 154 L80 164 L160 166 C168 164 166 156 156 154 L118 146 C114 128 118 112 114 96 C110 66 116 40 112 14"/>`, "M100 172 L140 172 L146 182 L104 182 Z") },
+  foot: { n:3, title:"Foot from the front", next:"results", back:"side", what:"foot",
+    tips:["Lay the card flat on the floor in front of the toes.","Hold the phone above and in front of the foot, looking down at it.","Fit the whole foot and the card in the photo."],
+    art: FLOOR_ART(`<path d="M104 14 L104 70 C104 90 98 110 96 130 C94 146 100 156 112 156 C124 156 130 146 128 130 C126 110 122 90 122 70 L122 14"/>`, "M94 166 L132 166 L138 182 L90 182 Z") }
 };
 function captureScreen(key){
   const st = STEPS[key], el = $("s-"+key), ph = S.photo[key], r = S.res[key];
@@ -521,19 +249,19 @@ function captureScreen(key){
     body = `<h2>${st.title}</h2><div class="illus" aria-hidden="true">${st.art}</div>
       <ul class="bullets">${st.tips.map((t,i)=>`<li><b>${i+1}</b><span>${t}</span></li>`).join("")}</ul>
       <p class="small muted">Already took this photo? Tap "Choose from photos" below to pick it from your phone.</p>`;
-    actions = fileBtns(true) + (key==="foot" ? `<button class="btn link" data-skipfoot>Skip the foot</button>` : "");
+    actions = fileBtns(true) + (key!=="front" ? `<button class="btn link" data-skip="${st.next}">Skip this photo</button>` : "");
   } else if (!r){
-    body = `<h2>${st.title}</h2><div class="working"><div class="spinner"></div><span>Finding the card and ${st.what}…</span></div>`;
+    body = `<h2>${st.title}</h2><div class="working"><div class="spinner"></div><span id="workmsg">${toolsReady ? `Finding the card and ${st.what}…` : "Loading the measuring tools (first time only)…"}</span></div>`;
     actions = "";
   } else {
     const icon = s => s==="ok" ? "✓" : s==="warn" ? "!" : "✕";
     const summary = r.ok ? (r.checks.some(c=>c.s==="warn") ? "Usable, with a warning" : "Photo looks good") : "This photo needs fixing";
     body = `<h2>${summary}</h2>
-      <div class="stage"><canvas id="cv-${key}" aria-label="Photo with the detected outline drawn on it"></canvas></div>
-      <ul class="checks">${r.checks.map(c=>`<li class="${c.s}"><span class="ic" aria-hidden="true">${icon(c.s)}</span><span>${c.t}${c.fix?`<span class="fix">${c.fix}</span>`:""}</span></li>`).join("")}</ul>
-      ${r.needSeed ? `<p class="small muted">Tap the card in the photo above to point it out.</p>` : ""}`;
+      <div class="stage"><canvas id="cv-${key}" aria-label="Photo with the detected card and outline drawn on it"></canvas></div>
+      ${r.needSeed ? `<p><b>Tap the card in the photo</b> if it's there, and the app will look again.</p>` : ""}
+      <ul class="checks">${r.checks.map(c=>`<li class="${c.s}"><span class="ic" aria-hidden="true">${icon(c.s)}</span><span>${c.t}${c.fix?`<span class="fix">${c.fix}</span>`:""}</span></li>`).join("")}</ul>`;
     actions = r.ok ? `<button class="btn primary" data-go="${st.next}">Use this photo</button><label class="btn">Retake<input type="file" accept="image/*" capture="environment" data-file="${key}"></label>`
-                   : fileBtns(true);
+                   : fileBtns(true) + (key!=="front" ? `<button class="btn link" data-skip="${st.next}">Skip this photo</button>` : "");
   }
   el.innerHTML = `<div class="body">${top}${body}</div>${actions?`<div class="actions">${actions}</div>`:""}`;
   if (ph && r) requestAnimationFrame(()=>drawReview(key));
@@ -543,39 +271,36 @@ function drawReview(key){
   const W = cv.parentElement.clientWidth, dpr = window.devicePixelRatio||1, disp = W/img.naturalWidth, H = img.naturalHeight*disp;
   cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr); cv.style.height = H+"px";
   const g = cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.drawImage(img,0,0,W,H);
-  const f = disp/r.fs, P = p => [p[0]*f, p[1]*f];
-  if (r.card){ g.strokeStyle = css("--card"); g.lineWidth=3; g.beginPath(); r.card.C.forEach((c,i)=>{ const q=P(c); i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]); }); g.closePath(); g.stroke(); }
-  const legCol = css("--leg"), tape = css("--tape");
-  if (r.leg){
-    g.strokeStyle=legCol; g.lineWidth=2.5;
-    for (const side of [0,1]){ g.beginPath(); r.leg.edges.forEach((e,i)=>{ const q=P(e[side]); i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]); }); g.stroke(); }
-  }
-  if (r.foot){
-    g.lineWidth=3;
-    [[r.foot.lenLine, legCol],[r.foot.widLine, tape]].forEach(([l,cl])=>{ if(!l) return; const a=P(l[0]), b=P(l[1]); g.strokeStyle=cl; g.beginPath(); g.moveTo(a[0],a[1]); g.lineTo(b[0],b[1]); g.stroke();
-      [a,b].forEach(q=>{ g.fillStyle=cl; g.beginPath(); g.arc(q[0],q[1],5,0,7); g.fill(); }); });
-  }
+  const f = disp/(r.fs||1), P = p => [p[0]*f, p[1]*f], legCol = css("--leg"), tape = css("--tape");
+  const poly = (pts, col, wdt, close) => { g.strokeStyle=col; g.lineWidth=wdt; g.beginPath(); pts.forEach((c,i)=>{ const q=P(c); i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]); }); if (close) g.closePath(); g.stroke(); };
+  (r.outline||[]).forEach(o => poly(o, legCol, 2.5, true));
+  if (r.card) poly(r.card, css("--card"), 3, true);
+  const line = l => { if (!l) return; poly(l, tape, 3.5, false); l.forEach(p=>{ const q=P(p); g.fillStyle=tape; g.beginPath(); g.arc(q[0],q[1],5,0,7); g.fill(); }); };
+  if (r.side) line(r.side.footLine);
+  if (r.foot) line(r.foot.widthLine);
   if (r.needSeed){
     cv.style.cursor="crosshair";
     cv.onclick = async e => { const b=cv.getBoundingClientRect(); const x=(e.clientX-b.left)/disp, y=(e.clientY-b.top)/disp;
-      S.res[key]=null; captureScreen(key); S.res[key] = await analyze(S.photo[key], key==="foot"?"foot":"leg", [x,y]); captureScreen(key); };
+      S.res[key]=null; captureScreen(key); await runAnalysis(key, [x,y]); };
   }
 }
-async function setPhoto(key, img){
-  S.photo[key]=img; S.res[key]=null; captureScreen(key);
-  try { S.res[key] = await analyze(img, key==="foot"?"foot":"leg"); }
-  catch(err){ S.res[key] = { ok:false, checks:[{ s:"bad", t:"Something went wrong reading this photo", fix:"Try another photo, ideally a JPEG from the phone's camera." }] }; }
-  captureScreen(key);
+async function runAnalysis(key, seed){
+  try { S.res[key] = await LegScan.analyzePhoto(S.photo[key], key, { file: S.file[key], seed }); }
+  catch(err){ S.res[key] = { ok:false, checks:[{ s:"bad", t:"Something went wrong reading this photo", fix:"Try again, or try another photo taken with the phone's camera." }] }; }
+  if (S.screen===key) captureScreen(key);
+}
+async function setPhoto(key, img, file){
+  S.photo[key]=img; S.file[key]=file; S.res[key]=null; captureScreen(key);
+  await runAnalysis(key, null);
 }
 document.addEventListener("change", e => {
   const k = e.target.dataset && e.target.dataset.file; if (!k) return; const f=e.target.files[0]; if (!f) return;
-  S.sample=false; const img=new Image(); img.onload=()=>setPhoto(k,img); img.onerror=()=>toast("That file couldn't be opened as a photo."); img.src=URL.createObjectURL(f);
+  const img=new Image(); img.onload=()=>setPhoto(k,img,f); img.onerror=()=>toast("That file couldn't be opened as a photo."); img.src=URL.createObjectURL(f);
 });
 
 /* ===================== RESULTS ===================== */
 function results(){
   const R = combine(); S.combined = R;
-  $("samplebanner").hidden = !S.sample;
   const m = (k, v, h, extra) => v==null ? `<div class="metric empty"><span class="k">${k}</span><span class="v">${extra||"Not measured"}</span></div>`
     : `<div class="metric"><span class="k">${k}</span><span class="v">${(v/10).toFixed(1)}<small>cm</small></span><span class="h">${h}</span></div>`;
   $("metrics").innerHTML =
@@ -642,27 +367,18 @@ function show(name){
   S.screen = name; window.scrollTo(0,0);
 }
 document.addEventListener("click", e => {
-  const b = e.target.closest("[data-go],[data-back],[data-skipfoot]"); if (!b) return;
-  if (b.dataset.skipfoot!==undefined){ S.photo.foot=null; S.res.foot=null; show("results"); return; }
+  const b = e.target.closest("[data-go],[data-back],[data-skip]"); if (!b) return;
+  if (b.dataset.skip!==undefined){ const cur=S.screen; S.photo[cur]=null; S.res[cur]=null; show(b.dataset.skip); return; }
   show(b.dataset.go || b.dataset.back);
 });
-$("go-start").onclick = () => { S.sample=false; S.photo={}; S.res={}; show("setup"); };
-$("go-again").onclick = () => { S.sample=false; S.photo={}; S.res={}; show("front"); };
-$("go-own").onclick = () => { S.sample=false; S.photo={}; S.res={}; show("front"); };
+$("go-start").onclick = () => { S.photo={}; S.file={}; S.res={}; show("setup"); };
+$("go-again").onclick = () => { S.photo={}; S.file={}; S.res={}; show("front"); };
+$("go-own").onclick = () => { S.photo={}; S.file={}; S.res={}; show("front"); };
 $("go-log").onclick = () => show("log"); $("go-log2").onclick = () => show("log");
 $("log-back").onclick = () => show(S.prev || "home");
-$("go-sample").onclick = async () => {
-  S.sample=true; S.photo={}; S.res={};
-  const b=$("go-sample"); b.disabled=true; b.textContent="Drawing sample photos…";
-  const [f,s,ft] = await Promise.all([toImg(sampleLeg("front")), toImg(sampleLeg("side")), toImg(sampleFoot())]);
-  b.disabled=false; b.textContent="Watch a demo with drawn example photos";
-  S.photo.side=s; S.photo.foot=ft;
-  S.res.side = await analyze(s,"leg"); S.res.foot = await analyze(ft,"foot");
-  show("front"); setPhoto("front", f);
-};
 let tt; function toast(m){ const t=$("toast"); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,2600); }
 window.addEventListener("resize", ()=>{ if (STEPS[S.screen]) drawReview(S.screen); });
-window.__legscan = { S, combine, analyze, TRUE, oval, keyAt, FRONT_KEYS, SIDE_KEYS };
+window.__legscan = { S, combine, setPhoto, show };
 })();
 </script>
 
