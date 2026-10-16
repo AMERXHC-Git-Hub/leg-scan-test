@@ -118,8 +118,11 @@ const CARD_ZONE = {
   side:  { box: [0, .58, 1, 1],   spot: [.5, .86] },
   foot:  { box: [0, .45, 1, 1],   spot: [.5, .80] }
 };
-function findCard(cv, img, full, seed, accept, mode){
-  const sm = canvasOf(img, 900), k = full.w / sm.w;
+function findCard(cv, img, full, seed, accept, mode, size){
+  // a card seen from farther away is small: if none is found at the normal working size, look again in more detail
+  if (!size){ const r = findCard(cv, img, full, seed, accept, mode, 900); if (r || seed) return r;
+    return Math.max(...dimsOf(img)) > 1300 ? findCard(cv, img, full, seed, accept, mode, 1400) : null; }
+  const sm = canvasOf(img, size), k = full.w / sm.w;
   const rgba = cv.imread(sm.c), rgb = new cv.Mat(), hsv = new cv.Mat();
   cv.cvtColor(rgba, rgb, cv.COLOR_RGBA2RGB); cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
   const m = new cv.Mat(sm.h, sm.w, cv.CV_8UC1), hd = hsv.data, md = m.data;
@@ -134,7 +137,7 @@ function findCard(cv, img, full, seed, accept, mode){
   const N = sm.w * sm.h; const cands = [];
   for (let i = 0; i < cs.size(); i++){
     const c = cs.get(i), a = cv.contourArea(c), br = cv.boundingRect(c);
-    let ok = a >= N*.001 && a <= N*.08 && br.x > 1 && br.y > 1 && br.x+br.width < sm.w-1 && br.y+br.height < sm.h-1;
+    let ok = a >= N*.0004 && a <= N*.08 && br.x > 1 && br.y > 1 && br.x+br.width < sm.w-1 && br.y+br.height < sm.h-1;
     if (seed) ok = a >= N*.0005 && cv.pointPolygonTest(c, new cv.Point(seed[0]*sm.s, seed[1]*sm.s), false) >= 0;
     if (ok){
       const hull = new cv.Mat(); cv.convexHull(c, hull, false, true);
@@ -208,20 +211,79 @@ function hit(cam, p, n, P0){ const d = rayOf(cam, p), den = V.dot(n, d); if (Mat
    Everything near the left and right edges is treated as background, so the app learns that room's wall and
    floor colors from the photo itself, then separates the leg (GrabCut). No fixed skin or clothing colors are assumed. */
 const BAND = { front: [.30, .70], side: [.14, .86], foot: [.18, .82] };
-function segment(cv, img, full, cardQ, maxDim, iters, mode, paint){
+/* Where is the measured leg? The setup instructions say the card lies on the floor right beside the measured ankle
+   (front photo). So the app looks along the floor at the card's level for the nearest thing that is not floor:
+   that is the measured foot. Using the card's position on the floor, it then works out where the shin must be
+   above that foot (120 to 380 mm up), and only that line is taken as "definitely leg". Nothing is assumed about
+   where in the picture the leg is. Returns null when the foot can't be found next to the card. */
+function locateLeg(rgb, W, H, k, cardQ, cam, by){
+  if (!cardQ || !cam) return null;
+  const rd = rgb.data, bin = i => ((rd[i*3]>>4)<<8) | ((rd[i*3+1]>>4)<<4) | (rd[i*3+2]>>4);
+  // floor colors: the strip at the bottom of the photo, which the instructions keep clear (floor below the foot)
+  const fh = new Uint32Array(4096); let fn = 0;
+  for (let y = by; y < H; y++) for (let x = 0; x < W; x++){ fh[bin(y*W+x)]++; fn++; }
+  const thr = Math.max(2, fn * .002);
+  const Q = cardQ.map(p => [p[0]/k, p[1]/k]);
+  const qcx = Q.reduce((a,p)=>a+p[0],0)/4, qcy = Q.reduce((a,p)=>a+p[1],0)/4;
+  const qx0 = Math.min(...Q.map(p=>p[0])), qx1 = Math.max(...Q.map(p=>p[0])), qy0 = Math.min(...Q.map(p=>p[1])), qy1 = Math.max(...Q.map(p=>p[1]));
+  const pxmm = Math.hypot(Q[1][0]-Q[0][0], Q[1][1]-Q[0][1]) > Math.hypot(Q[2][0]-Q[1][0], Q[2][1]-Q[1][1])
+    ? Math.hypot(Q[1][0]-Q[0][0], Q[1][1]-Q[0][1]) / 85.6 : Math.hypot(Q[2][0]-Q[1][0], Q[2][1]-Q[1][1]) / 85.6;
+  // look across the rows level with the card (from its top edge to its middle)
+  const r0 = Math.max(0, Math.round(qy0)), r1 = Math.min(H-1, Math.round(qcy)); if (r1 < r0) return null;
+  const frac = new Float32Array(W);
+  for (let x = 0; x < W; x++){ let c = 0, t = 0; for (let y = r0; y <= r1; y++){ t++; if (fh[bin(y*W+x)] < thr) c++; } frac[x] = c / t; }
+  const runs = []; let st = -1;
+  for (let x = 0; x <= W; x++){
+    const on = x < W && frac[x] > .5 && !(x >= qx0 - 2 && x <= qx1 + 2);
+    if (on && st < 0) st = x; if (!on && st >= 0){ runs.push([st, x-1]); st = -1; }
+  }
+  // merge small gaps, then keep foot-sized pieces (35 to 200 mm wide)
+  const m = []; for (const r of runs){ const l = m[m.length-1]; if (l && r[0] - l[1] < 6*pxmm) l[1] = r[1]; else m.push(r.slice()); }
+  const feet = m.filter(r => { const w = (r[1]-r[0]+1)/pxmm; return w >= 35 && w <= 200; });
+  if (!feet.length) return null;
+  const gap = r => r[0] > qcx ? r[0] - qx1 : qx0 - r[1];
+  feet.sort((a, b) => gap(a) - gap(b));
+  const foot = feet[0]; if (gap(foot) > 150*pxmm) return null; // the card must be right beside the foot
+  const fx = (foot[0] + foot[1]) / 2;
+  // the shin, straight up from that foot
+  const F = hit(cam, [fx*k, qcy*k], cam.n, cam.t); if (!F) return null;
+  const line = [];
+  for (let h = 120; h <= 380; h += 10){ const X = V.add(F, V.mul(cam.n, h)); if (X[2] <= 0) continue;
+    line.push([(cam.f*X[0]/X[2] + cam.cx)/k, (cam.f*X[1]/X[2] + cam.cy)/k]); }
+  if (line.length < 5) return null;
+  // the toes can reach at most about 22 cm in front of the card (it lies beside the ankle); the floor nearer the
+  // camera than that is background
+  const toward = V.unit(horiz(V.mul(cam.center, -1), cam.n)), T = V.add(cam.center, V.mul(toward, 220));
+  const floorRow = T[2] > 0 ? (cam.f*T[1]/T[2] + cam.cy)/k : H;
+  return { x: fx, foot, line, pxmm, half: Math.max(3, Math.round(15*pxmm)), floorRow: Math.max(qcy, Math.min(H, floorRow)) };
+}
+function segment(cv, img, full, cardQ, maxDim, iters, mode, paint, cam){
   const sm = canvasOf(img, maxDim || 800), k = full.w / sm.w, W = sm.w, H = sm.h, N = W*H;
   const rgba = cv.imread(sm.c), rgb = new cv.Mat();
   cv.cvtColor(rgba, rgb, cv.COLOR_RGBA2RGB);
-  const band = BAND[mode] || BAND.side, bx0 = Math.round(W*band[0]), bx1 = Math.round(W*band[1]);
-  const mask = new cv.Mat(H, W, cv.CV_8UC1);
   const by = Math.round(H*.94);   // floor showing below the foot
-  // a narrow strip down the middle of the guide band, upper part of the leg, is taken as definitely leg
+  const loc = mode === "front" ? locateLeg(rgb, W, H, k, cardQ, cam, by) : null;
+  const band = BAND[mode] || BAND.side;
+  let bx0 = Math.round(W*band[0]), bx1 = Math.round(W*band[1]);
+  if (loc){ // guide band centred on the located leg instead of on the middle of the photo
+    // wide enough for the largest calf on the size charts (about 21 cm across) with room to spare
+    const hw = Math.max(W*.08, 230*loc.pxmm); bx0 = Math.max(0, Math.round(loc.x - hw)); bx1 = Math.min(W, Math.round(loc.x + hw)); }
+  const mask = new cv.Mat(H, W, cv.CV_8UC1);
+  // a narrow strip that is definitely leg: on the located shin, or (no card yet) down the middle of the guide band
   const cx = (bx0 + bx1)/2, cw = Math.max(3, Math.round(W*.025)), fy0 = Math.round(H*.18), fy1 = Math.round(H*.55);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
-    let v = (x < bx0 || x >= bx1 || y >= by) ? cv.GC_BGD : cv.GC_PR_FGD;
-    if (y >= fy0 && y < fy1 && Math.abs(x - cx) <= cw) v = cv.GC_FGD;
+    let v = (x < bx0 || x >= bx1 || y >= by || (loc && y >= loc.floorRow)) ? cv.GC_BGD : cv.GC_PR_FGD;
+    if (!loc && y >= fy0 && y < fy1 && Math.abs(x - cx) <= cw) v = cv.GC_FGD;
     mask.data[y*W+x] = v;
   }
+  const seedPts = [];
+  if (loc) for (const [lx, ly] of loc.line){ const yy = Math.round(ly); if (yy < 0 || yy >= H) continue;
+    for (let x = Math.max(0, Math.round(lx - loc.half)); x <= Math.min(W-1, Math.round(lx + loc.half)); x++) mask.data[yy*W+x] = cv.GC_FGD;
+    // fill between sampled heights
+    seedPts.push([lx, yy]); }
+  for (let i = 1; i < seedPts.length; i++){ const [ax, ay] = seedPts[i-1], [bx, byy] = seedPts[i];
+    for (let y = Math.min(ay, byy); y <= Math.max(ay, byy); y++){ const t = ay === byy ? 0 : (y - ay)/(byy - ay), lx = ax + (bx - ax)*t;
+      for (let x = Math.max(0, Math.round(lx - loc.half)); x <= Math.min(W-1, Math.round(lx + loc.half)); x++) mask.data[y*W+x] = cv.GC_FGD; } }
   // colors seen in the background strips: inside the band, matching pixels start as "probably background"
   const rd = rgb.data, bin = i => ((rd[i*3]>>4)<<8) | ((rd[i*3+1]>>4)<<4) | (rd[i*3+2]>>4), hist = new Uint32Array(4096);
   let hn = 0;
@@ -250,8 +312,9 @@ function segment(cv, img, full, cardQ, maxDim, iters, mode, paint){
   const k5 = cv.Mat.ones(5, 5, cv.CV_8U), ko = cv.Mat.ones(Math.max(5, Math.round(W/90))|1, Math.max(5, Math.round(W/90))|1, cv.CV_8U); cv.morphologyEx(fg, fg, cv.MORPH_OPEN, ko);
   // keep the piece that runs down the middle of the photo
   const lab = new cv.Mat(), st = new cv.Mat(), ce = new cv.Mat();
-  const n = cv.connectedComponentsWithStats(fg, lab, st, ce, 8, cv.CV_32S), cx0 = Math.round(W*.42), cx1 = Math.round(W*.58), score = new Float64Array(n);
-  for (let y = 0; y < H; y++) for (let x = cx0; x < cx1; x++){ const l = lab.data32S[y*W+x]; if (l) score[l]++; }
+  const n = cv.connectedComponentsWithStats(fg, lab, st, ce, 8, cv.CV_32S), score = new Float64Array(n);
+  if (seedPts.length){ for (const [lx, ly] of seedPts){ const l = lab.data32S[ly*W + Math.round(lx)]; if (l) score[l]++; } }
+  else { const cx0 = Math.round(W*.42), cx1 = Math.round(W*.58); for (let y = 0; y < H; y++) for (let x = cx0; x < cx1; x++){ const l = lab.data32S[y*W+x]; if (l) score[l]++; } }
   let bi = 0; for (let i = 1; i < n; i++) if (score[i] > score[bi]) bi = i;
   for (let i = 0; i < N; i++) fg.data[i] = (bi && lab.data32S[i] === bi) ? 1 : 0;
   const filled = new cv.Mat(H, W, cv.CV_8UC1), cs = new cv.MatVector(), hier = new cv.Mat();
@@ -261,7 +324,8 @@ function segment(cv, img, full, cardQ, maxDim, iters, mode, paint){
   const outline = []; for (let i = 0; i < cs.size(); i++){ const c = cs.get(i); const pts = []; for (let r = 0; r < c.rows; r++) pts.push([(c.data32S[r*2]+.5)*k, (c.data32S[r*2+1]+.5)*k]); outline.push(pts); c.delete(); }
   [rgba, rgb, mask, bgd, fgd, fg, k5, ko, lab, st, ce, filled, cs, hier].forEach(x => x.delete());
   let area = 0; for (let i = 0; i < N; i++) area += out[i];
-  return { m: out, W, H, k, outline, area: area/N, band: [bx0*k, bx1*k] };
+  const seed = seedPts.length ? seedPts[seedPts.length >> 1] : null;
+  return { m: out, W, H, k, outline, area: area/N, band: [bx0*k, bx1*k], seed, located: !!loc, legX: loc ? loc.x*k : null };
 }
 
 /* ---------- measuring ---------- */
@@ -277,9 +341,10 @@ function rowSpans(S){
   }
   let top = -1, bot = -1; runs.forEach((l,y) => { if (l.length){ if (top < 0) top = y; bot = y; } });
   const rows = new Array(S.H).fill(null); if (top < 0) return rows;
-  // starting row: the widest single run in the upper third of the outline
+  // starting row: the located shin when known, otherwise the widest single run in the upper third of the outline
   let sy = top, sw = -1, sr = null;
-  for (let y = top; y <= top + (bot-top)/3; y++) for (const r of runs[y]){ if (r[1]-r[0] > sw){ sw = r[1]-r[0]; sy = y; sr = r; } }
+  if (S.seed){ const y = S.seed[1], r = (runs[y] || []).find(r => r[0] <= S.seed[0] && r[1] >= S.seed[0]); if (r){ sy = y; sr = r; } }
+  if (!sr) for (let y = top; y <= top + (bot-top)/3; y++) for (const r of runs[y]){ if (r[1]-r[0] > sw){ sw = r[1]-r[0]; sy = y; sr = r; } }
   rows[sy] = sr;
   const walk = (from, to, step) => { let c = (sr[0]+sr[1])/2, wPrev = sr[1]-sr[0];
     for (let y = from; y !== to; y += step){
@@ -367,9 +432,9 @@ async function analyzePhoto(img, mode, opts){
     out.card = C; out.cam = cam;
     out.checks.push({ s:"ok", t:"Card found and used to work out the camera angle and distance" });
     if (cam.dist < 250) out.checks.push({ s:"warn", t:"Very close to the floor card", fix:"Step back so the whole leg and the card fit with some space around them." });
-    if (cam.dist > 1800) out.checks.push({ s:"warn", t:"Too far away for 2 mm accuracy", fix:"Move a step closer and retake." });
+    if (cam.dist > 1300 && mode !== "foot") out.checks.push({ s:"bad", t:`Too far away (about ${(cam.dist/1000).toFixed(1)} m from the card)`, fix:"Stand 60–90 cm (2–3 ft) from the leg so the lower leg fills most of the photo, then retake." });
   }
-  const S = segment(cv, img, full, C, 800, 5, mode, opts.paint);
+  const S = segment(cv, img, full, C, 800, 5, mode, opts.paint, cam);
   out.outline = S.outline;
   const what = mode === "foot" ? "Foot" : "Leg";
   if (S.area < .01){ out.checks.push({ s:"bad", t:`${what} not found`, fix:"Keep the leg in the middle of the photo with floor visible around the foot." }); }
@@ -415,7 +480,7 @@ function liveCheck(source, mode, st){
   let cam = null, cardCut = false;
   if (Q){ const f = 0.72*Math.max(W, H); cam = pose(cv, Q, f, W, H); }
   // leg outline: same method as the measurement, run small with fewer passes
-  const Sg = segment(cv, sm.c, full, Q, 360, 2, mode), rows = rowSpans(Sg);
+  const Sg = segment(cv, sm.c, full, Q, 360, 2, mode, null, cam), rows = rowSpans(Sg);
   let leg = null;
   if (Sg.area > .02){
     const rowW = new Int32Array(H), rowL = new Int32Array(H).fill(-1), rowR = new Int32Array(H).fill(-1);
@@ -441,12 +506,14 @@ function liveCheck(source, mode, st){
   let msg = null, level = "green"; const issues = [];
   const fail = (text, lv, key) => { issues.push({ key: key || text, text, lv: lv || "red" }); if (!msg){ msg = text; level = lv || "red"; } };
   if (bright < 55) fail("Too dark. Turn on more lights.");
+  // much too far away: say so first, since nothing else can be judged reliably from there
+  if (cam && cam.dist >= 1400 && cam.n[1] <= -0.2) fail("Too far away. Move closer, 60–90 cm (2–3 ft) from the leg.");
   add("Leg", !!leg);
   if (!leg) fail("Point the camera at the leg.");
   // flat on the floor: with the phone's tilt, compare the card to true "up"; without it, a lenient check
   let cardFlat = false;
   if (cam){
-    if (st.beta != null){ const b = st.beta*Math.PI/180, up = [0, -Math.sin(b), -Math.cos(b)]; cardFlat = (cam.n[0]*up[0] + cam.n[1]*up[1] + cam.n[2]*up[2]) > .9; }
+    if (st.beta != null){ const b = st.beta*Math.PI/180, up = [0, -Math.sin(b), -Math.cos(b)]; cardFlat = (cam.n[0]*up[0] + cam.n[1]*up[1] + cam.n[2]*up[2]) > .75; }
     else cardFlat = cam.n[1] <= -0.2;
   }
   add("Card", !!Q && cardFlat);
@@ -460,7 +527,7 @@ function liveCheck(source, mode, st){
     if (leg.y0 > H*.08){ framed = false; fail("Fit the knee in the photo. Step back or tilt the phone up."); }
     { const mid = []; for (let y = leg.y0 + Math.round((leg.y1-leg.y0)*.3); y < leg.y0 + Math.round((leg.y1-leg.y0)*.7); y++) if (leg.rowW[y]) mid.push((leg.rowL[y]+leg.rowR[y])/2);
       mid.sort((a,b)=>a-b); const c = mid.length ? mid[mid.length>>1]/W : .5;
-      if (Math.abs(c - .5) > (mode === "front" ? .07 : .12)){ framed = false; fail(c < .5 ? "Move the phone left so the leg is on the guide line." : "Move the phone right so the leg is on the guide line.", "red", "center"); } }
+      if (Math.abs(c - .5) > (Sg.located ? .2 : mode === "front" ? .1 : .14)){ framed = false; fail(c < .5 ? "Move the phone left so the leg is on the guide line." : "Move the phone right so the leg is on the guide line.", "red", "center"); } }
     if (mode === "front"){
       const span = leg.y1 - leg.y0, up = [], low = [];
       for (let y = leg.y0 + Math.round(span*.3); y < leg.y0 + Math.round(span*.5); y++) if (leg.rowW[y]) up.push(leg.rowR[y]-leg.rowL[y]);
