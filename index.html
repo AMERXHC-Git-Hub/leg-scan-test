@@ -127,6 +127,31 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 .before { display: flex; flex-direction: column; gap: 10px; counter-reset: b; }
 .before div { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
 .before b.t { display: block; }
+html.lc-open, html.lc-open body { overflow: hidden; }
+#livecam { position: fixed; inset: 0; z-index: 20; background: #000; color: #fff; }
+.lc-intro, .lc-low { position: absolute; inset: 0; overflow-y: auto; background: var(--bg); color: var(--ink); display: flex; flex-direction: column; gap: 14px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-top: calc(20px + env(safe-area-inset-top, 0px)); padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+.lc-introbtns { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+.lc-err { background: var(--bad-bg); color: var(--bad); border-radius: 10px; padding: 10px 12px; }
+.lc-view { position: absolute; inset: 0; }
+#lc-video, #lc-ov { position: absolute; left: 0; right: 0; top: 0; width: 100%; height: calc(100% - 96px - env(safe-area-inset-bottom, 0px)); object-fit: cover; }
+.lc-ring { position: absolute; left: 6px; right: 6px; top: calc(6px + env(safe-area-inset-top, 0px)); height: calc(100% - 108px - env(safe-area-inset-bottom, 0px) - env(safe-area-inset-top, 0px)); border: 6px solid transparent; border-radius: 22px; pointer-events: none; transition: border-color .2s; }
+.lc-ring.red { border-color: #ff5a52; } .lc-ring.amber { border-color: #f5b301; } .lc-ring.green { border-color: #2fbf71; }
+.lc-top { position: absolute; top: calc(18px + env(safe-area-inset-top, 0px)); left: 16px; right: 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.lc-msg { background: rgba(0,0,0,.74); font: 600 1.1rem/1.3 var(--f-body); padding: 10px 14px; border-radius: 14px; text-align: center; max-width: 100%; }
+.lc-chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
+.lc-chip { font: 600 .78rem var(--f-body); padding: 4px 8px; border-radius: 99px; background: #b3261e; color: #fff; }
+.lc-chip.ok { background: #1e7f4f; }
+.lc-level { position: absolute; right: 16px; top: 40%; width: 18px; height: 140px; border-radius: 9px; background: rgba(0,0,0,.5); }
+.lc-level b { position: absolute; left: 0; right: 0; top: 44px; height: 46px; border: 2px solid #2fbf71; border-radius: 8px; }
+.lc-level i { position: absolute; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+.lc-level i.ok { background: #2fbf71; }
+.lc-count { position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%); font: 700 5rem var(--f-display); color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.6); }
+.lc-bar { position: absolute; left: 0; right: 0; bottom: 0; height: calc(96px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); background: #000; display: flex; align-items: center; justify-content: space-around; }
+.lc-shutter { width: 70px; height: 70px; border-radius: 50%; border: 5px solid #fff; background: transparent; cursor: pointer; }
+.lc-shutter:active { background: rgba(255,255,255,.4); }
+.lc-small { width: 52px; height: 52px; border-radius: 50%; border: 0; background: rgba(255,255,255,.14); color: #fff; font-size: 1.3rem; cursor: pointer; }
+.lc-res { position: absolute; left: 16px; bottom: calc(102px + env(safe-area-inset-bottom, 0px)); font: 500 .7rem var(--f-mono); color: rgba(255,255,255,.75); }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 10px; z-index: 5; max-width: 90vw; }
 </style>
 
@@ -221,13 +246,14 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 <script src="pipeline.js"></script>
 <script src="products.js"></script>
 <script src="guides.js"></script>
+<script src="camera.js"></script>
 <script>
 (function(){
 "use strict";
 const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const LOGKEY = "legscan.v3.log", PRODKEY = "legscan.product";
-const S = { screen: "home", prev: "home", photo: {}, file: {}, res: {}, kneeTap: null, legLen: null, choice: null, confirmed: false };
+const S = { screen: "home", prev: "home", photo: {}, file: {}, shots: {}, baseIdx: {}, cap: {}, res: {}, kneeTap: null, legLen: null, choice: null, confirmed: false };
 let toolsReady = false;
 LegScan.getCV().then(() => { toolsReady = true; $("toolstatus").textContent = "Measuring tools ready."; const w = $("workmsg"); if (w) w.textContent = "Finding the card and the leg…"; },
   () => { $("toolstatus").textContent = "The measuring tools didn't load. Check the internet connection and reload the page."; });
@@ -284,7 +310,7 @@ function renderSetup(){
 function captureScreen(key){
   const st = STEP_INFO[key], el = $("s-"+key), ph = S.photo[key], r = S.res[key], s = steps(), n = s.indexOf(key)+1;
   const top = `<div class="topbar"><button class="back" data-back="${backOf(key)}" aria-label="Back">‹</button><div style="flex:1;display:flex;flex-direction:column;gap:6px"><span class="steplabel">Photo ${n} of ${s.length}</span><div class="bar"><i style="width:${n/s.length*100}%"></i></div></div></div>`;
-  const fileBtns = primary => `<label class="btn ${primary?"primary":""}">Take photo<input type="file" accept="image/*" capture="environment" data-file="${key}"></label>
+  const fileBtns = primary => `<button class="btn ${primary?"primary":""}" data-live="${key}">Open live camera</button>
       <label class="btn">Choose from photos<input type="file" accept="image/*" data-file="${key}"></label>`;
   let body, actions;
   if (!ph){
@@ -311,7 +337,7 @@ function captureScreen(key){
     if (r.ok){
       const ready = !kneeStep || S.kneeTap;
       actions = `<button class="btn primary" data-go="${nextOf(key)}" ${ready ? "" : "disabled"}>${ready ? "Use this photo" : "Tap the knee bump first"}</button>
-        <label class="btn">Retake<input type="file" accept="image/*" capture="environment" data-file="${key}"></label>` +
+        <button class="btn" data-live="${key}">Retake with live camera</button>` +
         (kneeStep && !S.kneeTap ? `<button class="btn link" id="noknee">Knee isn't in the photo — continue without leg length</button>` : "");
     } else actions = fileBtns(true);
   }
@@ -345,15 +371,41 @@ function drawReview(key){
     };
   }
 }
+async function analyzeOne(key, shot, seed){
+  try { return await LegScan.analyzePhoto(shot.img, key, { file: shot.file, seed }); }
+  catch(err){ return { ok:false, checks:[{ s:"bad", t:"Something went wrong reading this photo", fix:"Try again, or try another photo taken with the phone's camera." }] }; }
+}
+/* Several frames: measure each, then average the leg profile and foot length across the frames that worked. */
 async function runAnalysis(key, seed){
-  try { S.res[key] = await LegScan.analyzePhoto(S.photo[key], key, { file: S.file[key], seed }); }
-  catch(err){ S.res[key] = { ok:false, checks:[{ s:"bad", t:"Something went wrong reading this photo", fix:"Try again, or try another photo taken with the phone's camera." }] }; }
+  const shots = seed ? [S.shots[key][S.baseIdx[key] || 0]] : S.shots[key];
+  const res = []; for (const sh of shots) res.push(await analyzeOne(key, sh, seed));
+  const okIdx = res.map((r,i) => r.ok ? i : -1).filter(i => i >= 0);
+  const bi = okIdx.length ? okIdx[0] : 0, base = res[bi];
+  if (!seed){ S.baseIdx[key] = bi; S.photo[key] = shots[bi].img; S.file[key] = shots[bi].file; }
+  const part = key === "side" ? "side" : key === "front" ? "front" : null;
+  if (part && okIdx.length > 1){
+    const used = okIdx.map(i => res[i][part]).filter(Boolean), grid = base[part].prof.map(p => p.h);
+    base[part].prof = grid.map(h => { const ws = used.map(u => interp(u.prof, h)).filter(w => w != null); return { h, w: ws.reduce((a,b)=>a+b,0)/ws.length }; });
+    const at = [120, 330].map(h => used.map(u => interp(u.prof, h)).filter(w => w != null));
+    let spread = Math.max(...at.map(a => a.length > 1 ? Math.max(...a) - Math.min(...a) : 0));
+    if (part === "side"){ const fl = used.map(u => u.footLen).filter(Boolean); base.side.footLen = fl.reduce((a,b)=>a+b,0)/fl.length; }
+    base.frames = { n: used.length, spread };
+    base.checks.push(spread <= 2 ? { s:"ok", t:`Measured from ${used.length} photos, which agreed within ${(spread/10).toFixed(1)} cm / ${(spread/25.4).toFixed(2)} in` }
+      : { s:"warn", t:`The ${used.length} photos disagreed by ${(spread/10).toFixed(1)} cm / ${(spread/25.4).toFixed(2)} in`, fix:"The phone or the leg moved. Hold steady and retake." });
+  }
+  const cap = S.cap[key]; if (cap) base.checks.push({ s: cap.method === "live video frame" ? "warn" : "ok", t:`Captured as a ${cap.method}, ${cap.w}×${cap.h} pixels` });
+  S.res[key] = base;
   if (S.screen === key) captureScreen(key);
 }
-async function setPhoto(key, img, file){
-  S.photo[key] = img; S.file[key] = file; S.res[key] = null; if (key === "side"){ S.kneeTap = null; S.legLen = null; }
+async function setShots(key, shots){
+  S.shots[key] = shots; S.baseIdx[key] = 0; S.photo[key] = shots[0].img; S.file[key] = shots[0].file; S.res[key] = null;
+  S.cap[key] = { method: shots[0].method || "photo from the phone", w: shots[0].w || shots[0].img.naturalWidth, h: shots[0].h || shots[0].img.naturalHeight };
+  if (key === "side"){ S.kneeTap = null; S.legLen = null; }
   captureScreen(key); await runAnalysis(key, null);
 }
+const setPhoto = (key, img, file) => setShots(key, [{ img, file, method: "photo from the phone", w: img.naturalWidth, h: img.naturalHeight }]);
+document.addEventListener("click", e => { const b = e.target.closest("[data-live]"); if (!b) return; const key = b.dataset.live;
+  LiveCam.open({ mode: key, title: STEP_INFO[key].title }, shots => { if (shots && shots.length){ show(key); setShots(key, shots); } }); });
 document.addEventListener("change", e => {
   const k = e.target.dataset && e.target.dataset.file; if (!k) return; const f = e.target.files[0]; if (!f) return;
   const img = new Image(); img.onload = () => setPhoto(k, img, f); img.onerror = () => toast("That file couldn't be opened as a photo."); img.src = URL.createObjectURL(f);
@@ -500,7 +552,7 @@ function chart(R){
 $("cmp-save").onclick = () => {
   const log = loadLog(), when = new Date().toISOString(), u = $("cmpunit").value; let n = 0;
   (S.cmpItems||[]).forEach(([id,name,v]) => { const t = parseFloat($("t-"+id).value); if (!isFinite(t)) return;
-    log.push({ when, product: product.short, name, app: v, tape: u==="cm" ? t*10 : t*25.4 }); n++; });
+    log.push({ when, product: product.short, name, app: v, tape: u==="cm" ? t*10 : t*25.4, capture: Object.values(S.cap).map(c => `${c.method} ${c.w}x${c.h}`).join('; '), ua: navigator.userAgent }); n++; });
   if (!n){ toast("Enter at least one tape value first."); return; }
   saveLog(log); (S.cmpItems||[]).forEach(([id]) => $("t-"+id).value = ""); toast(`Saved ${n} comparison${n>1?"s":""} to the test log`);
 };
@@ -521,7 +573,7 @@ function renderLog(){
 }
 $("log-copy").onclick = async () => {
   const log = loadLog(); if (!log.length){ toast("The log is empty."); return; }
-  const t = ["Saved\tProduct\tMeasure\tApp cm\tApp in\tTape cm\tTape in\tDifference cm\tDifference in"].concat(log.map(r => [r.when, r.product||"", r.name, (r.app/10).toFixed(2), (r.app/25.4).toFixed(2), (r.tape/10).toFixed(2), (r.tape/25.4).toFixed(2), ((r.app-r.tape)/10).toFixed(2), ((r.app-r.tape)/25.4).toFixed(2)].join("\t"))).join("\n");
+  const t = ["Saved\tProduct\tMeasure\tApp cm\tApp in\tTape cm\tTape in\tDifference cm\tDifference in\tCapture\tDevice"].concat(log.map(r => [r.when, r.product||"", r.name, (r.app/10).toFixed(2), (r.app/25.4).toFixed(2), (r.tape/10).toFixed(2), (r.tape/25.4).toFixed(2), ((r.app-r.tape)/10).toFixed(2), ((r.app-r.tape)/25.4).toFixed(2), r.capture||"", r.ua||""].join("\t"))).join("\n");
   try { await navigator.clipboard.writeText(t); toast("Copied. Paste it into a spreadsheet."); }
   catch(e){ const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast("Copied. Paste it into a spreadsheet."); } catch(_){ toast("Copying is blocked on this device."); } ta.remove(); }
 };
@@ -539,7 +591,7 @@ function show(name){
   S.screen = name; window.scrollTo(0,0);
 }
 document.addEventListener("click", e => { const b = e.target.closest("[data-go],[data-back]"); if (!b || b.disabled) return; show(b.dataset.go || b.dataset.back); });
-const reset = () => { S.shoeWho = null; S.shoeSize = null; S.photo = {}; S.file = {}; S.res = {}; S.kneeTap = null; S.legLen = null; S.choice = null; S.confirmed = false; S.sizing = null; };
+const reset = () => { S.shots = {}; S.baseIdx = {}; S.cap = {}; S.shoeWho = null; S.shoeSize = null; S.photo = {}; S.file = {}; S.res = {}; S.kneeTap = null; S.legLen = null; S.choice = null; S.confirmed = false; S.sizing = null; };
 $("go-start").onclick = () => { if (!product){ toast("Choose a product first."); return; } reset(); show(product.rules === "shoe" ? "shoe" : "setup"); };
 $("go-first").onclick = () => show(steps()[0]);
 $("go-again").onclick = () => { reset(); show("home"); };

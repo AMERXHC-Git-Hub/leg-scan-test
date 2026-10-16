@@ -27,10 +27,12 @@ function getCV(){
 }
 
 /* ---------- small helpers ---------- */
+const dimsOf = img => [img.naturalWidth || img.videoWidth || img.width, img.naturalHeight || img.videoHeight || img.height];
 function canvasOf(img, maxDim){
-  const s = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+  const [iw, ih] = dimsOf(img);
+  const s = Math.min(1, maxDim / Math.max(iw, ih));
   const c = document.createElement("canvas");
-  c.width = Math.max(1, Math.round(img.naturalWidth * s)); c.height = Math.max(1, Math.round(img.naturalHeight * s));
+  c.width = Math.max(1, Math.round(iw * s)); c.height = Math.max(1, Math.round(ih * s));
   const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0, c.width, c.height);
   return { c, s, w: c.width, h: c.height, g };
 }
@@ -180,8 +182,8 @@ const rayOf = (cam, p) => [(p[0]-cam.cx)/cam.f, (p[1]-cam.cy)/cam.f, 1];
 function hit(cam, p, n, P0){ const d = rayOf(cam, p), den = V.dot(n, d); if (Math.abs(den) < 1e-9) return null; return V.mul(d, V.dot(n, P0)/den); }
 
 /* ---------- leg and foot outline ---------- */
-function segment(cv, img, full, cardQ){
-  const sm = canvasOf(img, 800), k = full.w / sm.w, W = sm.w, H = sm.h, N = W*H;
+function segment(cv, img, full, cardQ, maxDim, iters){
+  const sm = canvasOf(img, maxDim || 800), k = full.w / sm.w, W = sm.w, H = sm.h, N = W*H;
   const rgba = cv.imread(sm.c), rgb = new cv.Mat(), hsv = new cv.Mat();
   cv.cvtColor(rgba, rgb, cv.COLOR_RGBA2RGB); cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
   const hd = hsv.data, dark = new cv.Mat(H, W, cv.CV_8UC1), skin = new cv.Mat(H, W, cv.CV_8UC1), mask = new cv.Mat(H, W, cv.CV_8UC1);
@@ -212,7 +214,7 @@ function segment(cv, img, full, cardQ){
   }
   let fgCount = 0; for (let i = 0; i < N; i++) if (mask.data[i] === cv.GC_FGD) fgCount++;
   const bgd = new cv.Mat(), fgd = new cv.Mat();
-  if (fgCount > 50) cv.grabCut(rgb, mask, new cv.Rect(0, 0, 1, 1), bgd, fgd, 5, cv.GC_INIT_WITH_MASK);
+  if (fgCount > 50) cv.grabCut(rgb, mask, new cv.Rect(0, 0, 1, 1), bgd, fgd, iters || 5, cv.GC_INIT_WITH_MASK);
   const fg = new cv.Mat(H, W, cv.CV_8UC1);
   for (let i = 0; i < N; i++) fg.data[i] = (fgCount > 50 && (mask.data[i] === cv.GC_FGD || mask.data[i] === cv.GC_PR_FGD)) ? 1 : 0;
   const big = pick(fg, false), filled = new cv.Mat(H, W, cv.CV_8UC1);
@@ -358,5 +360,90 @@ function heightAt(r, p){
   const X = hit(r.cam, p, r.side.pn, r.side.P0); if (!X) return null;
   return V.dot(V.sub(X, r.side.P0), r.cam.n);
 }
-window.LegScan = { getCV, analyzePhoto, heightAt, CW, CH };
+/* ---------- live check: runs several times a second on a small copy of the camera frame ----------
+   Returns one status (red / amber / green), one instruction, checklist chips and overlay shapes.
+   Measurements are NOT taken from these frames; they only decide whether the scene is ready. */
+function liveCheck(source, mode, st){
+  const cv = window.cv; if (!cv || !cv.Mat) return null;
+  const sm = canvasOf(source, 360), W = sm.w, H = sm.h, N = W*H;
+  const d = sm.g.getImageData(0, 0, W, H).data;
+  // light and steadiness
+  let sum = 0; const thumb = new Uint8Array(Math.ceil(W/4)*Math.ceil(H/4)); let ti = 0;
+  for (let y = 0; y < H; y += 4) for (let x = 0; x < W; x += 4){ const i = (y*W+x)*4, Y = .299*d[i]+.587*d[i+1]+.114*d[i+2]; thumb[ti++] = Y; sum += Y; }
+  const bright = sum / ti; let motion = 0;
+  if (st.prev && st.prev.length === thumb.length){ for (let i = 0; i < thumb.length; i++) motion += Math.abs(thumb[i]-st.prev[i]); motion /= thumb.length; } else motion = 99;
+  st.prev = thumb;
+  // card
+  const full = { w: W, h: H };
+  const Q = findCard(cv, sm.c, full, null);
+  let cam = null, cardCut = false;
+  if (Q){ const f = 0.72*Math.max(W, H); cam = pose(cv, Q, f, W, H); }
+  // leg outline: same method as the measurement, run small with fewer passes
+  const Sg = segment(cv, sm.c, full, Q, 360, 2), rows = rowSpans(Sg);
+  let leg = null;
+  if (Sg.area > .02){
+    const rowW = new Int32Array(H), rowL = new Int32Array(H).fill(-1), rowR = new Int32Array(H).fill(-1);
+    let y0 = -1, y1 = -1, x0 = W, x1 = 0;
+    rows.forEach((r, y) => { if (!r) return; rowL[y] = r[0]; rowR[y] = r[1]; rowW[y] = r[1]-r[0]+1; if (y0 < 0) y0 = y; y1 = y; x0 = Math.min(x0, r[0]); x1 = Math.max(x1, r[1]); });
+    if (y0 >= 0) leg = { x0, y0, x1, y1, rowW, rowL, rowR };
+  }
+  // card cut off at the bottom edge of the frame
+  if (!Q){
+    const rgba = cv.imread(sm.c), rgb = new cv.Mat(), hsv = new cv.Mat();
+    cv.cvtColor(rgba, rgb, cv.COLOR_RGBA2RGB); cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+    const hd = hsv.data, cardish = new cv.Mat(H, W, cv.CV_8UC1);
+    for (let i = 0, j = 0; i < N; i++, j += 3){ const h = hd[j], s = hd[j+1], v = hd[j+2]; cardish.data[i] = (v > 185 && (s < 45 || (h > 75 && h < 130 && s < 120))) ? 255 : 0; }
+    const l2 = new cv.Mat(), s2 = new cv.Mat(), c2 = new cv.Mat();
+    const n2 = cv.connectedComponentsWithStats(cardish, l2, s2, c2, 8, cv.CV_32S);
+    for (let i = 1; i < n2; i++){ const a = s2.intAt(i, cv.CC_STAT_AREA), y = s2.intAt(i, cv.CC_STAT_TOP), h = s2.intAt(i, cv.CC_STAT_HEIGHT);
+      if (a > N*.001 && a < N*.03 && y + h >= H - 1 && y > H*.6) cardCut = true; }
+    [rgba, rgb, hsv, cardish, l2, s2, c2].forEach(x => x.delete());
+  }
+
+  // ---------- decide ----------
+  const chips = [], add = (k, ok) => chips.push({ k, ok });
+  let msg = null, level = "green";
+  const fail = (text, lv) => { if (!msg){ msg = text; level = lv || "red"; } };
+  if (bright < 55) fail("Too dark. Turn on more lights.");
+  add("Leg", !!leg);
+  if (!leg) fail("Point the camera at the leg.");
+  const cardFlat = !!(cam && cam.n[1] <= -0.45);
+  add("Card", !!Q && cardFlat);
+  if (!Q) fail(cardCut ? "The card is cut off. Tilt the phone down a little." : (mode === "front" ? "Card not found. Lay it flat beside the ankle." : "Card not found. Lay it flat in front of the foot."));
+  else if (!cardFlat) fail("The card must lie flat on the floor.");
+  let framed = !!leg;
+  if (leg){
+    if (leg.y1 >= H - 2){ framed = false; fail("The foot is cut off. Step back or tilt the phone down."); }
+    let sideCut = false; for (let y = Math.floor(H*.5); y <= leg.y1; y++) if (leg.rowW[y] && (leg.rowL[y] <= 0 || leg.rowR[y] >= W-1)) sideCut = true;
+    if (sideCut){ framed = false; fail("Center the leg. It touches the edge of the screen."); }
+    if (leg.y0 > H*.08){ framed = false; fail("Fit the knee in the photo. Step back or tilt the phone up."); }
+    if (mode === "front"){
+      const span = leg.y1 - leg.y0, up = [], low = [];
+      for (let y = leg.y0 + Math.round(span*.3); y < leg.y0 + Math.round(span*.5); y++) if (leg.rowW[y]) up.push(leg.rowR[y]-leg.rowL[y]);
+      for (let y = leg.y0 + Math.round(span*.6); y < leg.y0 + Math.round(span*.85); y++) if (leg.rowW[y]) low.push(leg.rowR[y]-leg.rowL[y]);
+      up.sort((a,b)=>a-b); low.sort((a,b)=>a-b);
+      if (up.length && low.length && low[low.length>>1] > 1.35*up[up.length>>1]){ framed = false; fail("The legs look like they are touching. Ask for feet a fist apart."); }
+    }
+    if (Q){
+      const qx0 = Math.min(...Q.map(p=>p[0])), qx1 = Math.max(...Q.map(p=>p[0])), qy0 = Math.min(...Q.map(p=>p[1])), qy1 = Math.max(...Q.map(p=>p[1]));
+      let over = 0; for (let y = Math.max(0, Math.floor(qy0)); y <= Math.min(H-1, qy1); y++) if (leg.rowW[y] && leg.rowR[y] >= qx0 && leg.rowL[y] <= qx1) over++;
+      if (over > (qy1-qy0)*.5){ framed = false; fail("Move the card so it does not touch the foot."); }
+      if (mode === "front" && (qy0+qy1)/2 > leg.y1 + 4){ framed = false; fail("Move the card beside the ankle, not in front of the toes."); }
+    }
+  }
+  add("Framing", framed);
+  if (cam && cardFlat){
+    const ok = cam.dist > 380 && cam.dist < 1400; add("Distance", ok);
+    if (cam.dist <= 380) fail("Step back a little.", "amber"); else if (cam.dist >= 1400) fail("Move a little closer.", "amber");
+  }
+  if (st.beta != null){
+    const ok = st.beta > 45 && st.beta < 92; add("Angle", ok);
+    if (st.beta >= 92) fail("Tilt the phone down slightly.", "amber"); else if (st.beta <= 45) fail("Hold the phone more upright.", "amber");
+  }
+  if (bright >= 55) add("Light", true); else add("Light", false);
+  const steady = motion < 5; add("Steady", steady);
+  if (!steady) fail("Hold still.", "amber");
+  return { level: msg ? level : "green", msg: msg || "Hold still…", chips, quad: Q, leg: leg ? { x0: leg.x0, y0: leg.y0, x1: leg.x1, y1: leg.y1 } : null, outline: Sg.outline, w: W, h: H, motion, bright, dist: cam ? cam.dist : null };
+}
+window.LegScan = { getCV, analyzePhoto, heightAt, liveCheck, CW, CH };
 })();
