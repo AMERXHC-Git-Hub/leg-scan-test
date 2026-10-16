@@ -374,6 +374,20 @@ function results(){
   $("res-label").textContent = P.name;
   const code = i => i === -1 ? "Custom garment" : sizes[i] ? sizes[i].name : "";
   let rec = "";
+  /* Plausibility check: catches outlines that took in both legs, the other foot, or a wrong card. */
+  const issues = [];
+  if (R.ankle && R.calf){
+    const fw = interp(S.res.front.front.prof, R.ankle.h), sd = interp(S.res.side.side.prof, R.ankle.h);
+    if (R.ankle.c >= R.calf.c) issues.push("The ankle measured larger than the calf.");
+    if (fw && sd && (fw/sd > 1.6 || fw/sd < 0.55)) issues.push(`The ankle measured ${fw > sd ? "much wider from the front than from the side" : "much deeper from the side than from the front"} (${(fw/10).toFixed(1)} cm vs ${(sd/10).toFixed(1)} cm). The outline may include both legs, the other foot, or something else in the photo.`);
+    if (cm(R.ankle.c) > 55 || cm(R.ankle.c) < 14) issues.push(`An ankle of ${both(R.ankle.c)} is outside the range the app can measure reliably.`);
+  }
+  if (issues.length && (P.rules === "ankleCalf" || P.rules === "overlap")){
+    $("recbox").innerHTML = `<div class="rec custom"><span class="label">Measurement check failed</span><span class="big">Retake the photos</span>
+      ${issues.map(t => `<span>${t}</span>`).join("")}
+      <span class="small">No size is recommended from these measurements. Check that only the measured leg is in the outline on each photo, and that the card is lying flat on the floor.</span></div>`;
+    S.sizing = { ankleSizes: [], calfSizes: [] };
+  } else
   if (P.rules === "ankleCalf" || P.rules === "overlap"){
     if (R.ankle && R.calf){
       const z = (P.rules === "overlap" ? Sizing.overlap : Sizing.ankleCalf)(P, cm(R.ankle.c), cm(R.calf.c)); S.sizing = z;
@@ -401,7 +415,7 @@ function results(){
       }
     } else rec = `<div class="rec custom"><span class="label">No recommendation yet</span><span>Both the front and side photos are needed to measure the ankle and calf.</span></div>`;
   }
-  $("recbox").innerHTML = rec + (rec ? `<p class="small muted">Sizes follow the ${P.name} measurement and fitting guide. The clinician makes the final determination for every patient.</p>` : "");
+  if (!issues.length) $("recbox").innerHTML = rec + (rec ? `<p class="small muted">Sizes follow the ${P.name} measurement and fitting guide. The clinician makes the final determination for every patient.</p>` : "");
   document.querySelectorAll("[data-choice]").forEach(b => b.onclick = () => { S.choice = +b.dataset.choice; S.confirmed = false; results(); });
   const chk = $("confirmchk"); if (chk) chk.onchange = () => { S.confirmed = chk.checked; results(); };
 

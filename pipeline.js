@@ -227,9 +227,30 @@ function segment(cv, img, full, cardQ){
 }
 
 /* ---------- measuring ---------- */
+/* For each row, the span of ONE leg: rows can contain several separate runs (two legs, a hand, the other foot).
+   The run followed is the widest one in the upper part of the outline, then tracked row by row, keeping the run
+   whose center is closest to the row above or below. This stops the width from spanning both legs. */
 function rowSpans(S){
-  const rows = new Array(S.H);
-  for (let y = 0; y < S.H; y++){ let l = -1, r = -1; for (let x = 0; x < S.W; x++) if (S.m[y*S.W+x]){ if (l < 0) l = x; r = x; } rows[y] = l < 0 ? null : [l, r]; }
+  const runs = new Array(S.H);
+  for (let y = 0; y < S.H; y++){
+    const list = []; let st = -1;
+    for (let x = 0; x <= S.W; x++){ const on = x < S.W && S.m[y*S.W+x]; if (on && st < 0) st = x; if (!on && st >= 0){ list.push([st, x-1]); st = -1; } }
+    runs[y] = list;
+  }
+  let top = -1, bot = -1; runs.forEach((l,y) => { if (l.length){ if (top < 0) top = y; bot = y; } });
+  const rows = new Array(S.H).fill(null); if (top < 0) return rows;
+  // starting row: the widest single run in the upper third of the outline
+  let sy = top, sw = -1, sr = null;
+  for (let y = top; y <= top + (bot-top)/3; y++) for (const r of runs[y]){ if (r[1]-r[0] > sw){ sw = r[1]-r[0]; sy = y; sr = r; } }
+  rows[sy] = sr;
+  const walk = (from, to, step) => { let c = (sr[0]+sr[1])/2, wPrev = sr[1]-sr[0];
+    for (let y = from; y !== to; y += step){
+      const l = runs[y]; if (!l.length) continue;
+      let best = null, bd = Infinity; for (const r of l){ const d = Math.abs((r[0]+r[1])/2 - c); if (d < bd){ bd = d; best = r; } }
+      if (bd > Math.max(20, wPrev)) continue; // jumped to a different object
+      rows[y] = best; c = (best[0]+best[1])/2; wPrev = best[1]-best[0];
+    } };
+  walk(sy+1, bot+1, 1); walk(sy-1, top-1, -1);
   return rows;
 }
 function bandOf(S, rows){ let top = -1, bot = -1; rows.forEach((r,y) => { if (r){ if (top < 0) top = y; bot = y; } }); return [top, bot]; }
