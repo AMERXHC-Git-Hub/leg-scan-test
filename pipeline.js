@@ -110,7 +110,15 @@ async function focal35(file){
 /* ---------- card on the floor ---------- */
 /* Card candidates are tried from largest to smallest; `accept` rejects white shapes that are not lying on the floor
    (a shirt hem, paper on a wall, a card held in the hand). */
-function findCard(cv, img, full, seed, accept){
+/* Where the setup instructions put the card, as fractions of the photo (left, top, right, bottom) and the
+   expected spot. Front: on the floor beside the ankle. Side: on the floor in front of the foot.
+   Foot: on the floor in front of the toes. Nothing outside this area is considered. */
+const CARD_ZONE = {
+  front: { box: [0, .50, 1, 1],   spot: [.5, .78] },
+  side:  { box: [0, .58, 1, 1],   spot: [.5, .86] },
+  foot:  { box: [0, .45, 1, 1],   spot: [.5, .80] }
+};
+function findCard(cv, img, full, seed, accept, mode){
   const sm = canvasOf(img, 900), k = full.w / sm.w;
   const rgba = cv.imread(sm.c), rgb = new cv.Mat(), hsv = new cv.Mat();
   cv.cvtColor(rgba, rgb, cv.COLOR_RGBA2RGB); cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
@@ -135,7 +143,11 @@ function findCard(cv, img, full, seed, accept){
       if (q && q.rows === 4){
         const qa = cv.contourArea(q), fill = a/qa;
         if (fill >= (seed ? .7 : .78)){ const sc = a*fill;
-          const P = []; for (let r = 0; r < 4; r++) P.push([(q.data32S[r*2]+.5)*k, (q.data32S[r*2+1]+.5)*k]); cands.push({ sc, P }); }
+          const P = []; for (let r = 0; r < 4; r++) P.push([(q.data32S[r*2]+.5)*k, (q.data32S[r*2+1]+.5)*k]);
+          const cx = P.reduce((a,p)=>a+p[0],0)/4/full.w, cy = P.reduce((a,p)=>a+p[1],0)/4/(full.h || sm.h*k), z = CARD_ZONE[mode];
+          if (!z || seed) cands.push({ sc, P });
+          else if (cx >= z.box[0] && cx <= z.box[2] && cy >= z.box[1] && cy <= z.box[3])
+            cands.push({ sc: 1 / (1e-3 + Math.hypot(cx - z.spot[0], (cy - z.spot[1])*1.5)), P }); }
       }
       if (q) q.delete(); hull.delete();
     }
@@ -341,7 +353,7 @@ async function analyzePhoto(img, mode, opts){
   const F35 = opts.file ? await focal35(opts.file) : null;
   const f = opts.f ? opts.f*Math.max(full.w, full.h) : F35 ? F35/43.27*Math.hypot(full.w, full.h) : 0.72*Math.max(full.w, full.h);
   out.focalSource = F35 ? "photo" : "typical phone";
-  let Q = findCard(cv, img, full, opts.seed || null, opts.seed ? null : floorCard(cv, f, full.w, full.h));
+  let Q = findCard(cv, img, full, opts.seed || null, opts.seed ? null : floorCard(cv, f, full.w, full.h), mode);
   const C = Q ? refineQuad(G, Q) : null;
   let cam = C ? pose(cv, C, f, full.w, full.h) : null;
   if (cam && cam.n[1] > -0.2){ // the card's surface faces the camera instead of lying on the floor
@@ -399,7 +411,7 @@ function liveCheck(source, mode, st){
   st.prev = thumb;
   // card
   const full = { w: W, h: H };
-  const big = canvasOf(source, 720), Q = findCard(cv, big.c, full, null, floorCard(cv, 0.72*Math.max(W, H), W, H));
+  const big = canvasOf(source, 720), Q = findCard(cv, big.c, full, null, floorCard(cv, 0.72*Math.max(W, H), W, H), mode);
   let cam = null, cardCut = false;
   if (Q){ const f = 0.72*Math.max(W, H); cam = pose(cv, Q, f, W, H); }
   // leg outline: same method as the measurement, run small with fewer passes
