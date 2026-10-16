@@ -12,7 +12,7 @@ const MIN_SHORT_SIDE = 1440;      // below this, the final photo is taken with t
 const FRAMES = 3;                 // photos captured and averaged
 const HOLD_MS = 1200;             // time green must hold before the countdown
 let ui = null, stream = null, track = null, imageCapture = null, running = false, st = {}, onDone = null, mode = "side";
-let greenSince = 0, counting = false, lastSpoken = "", lastSpokeAt = 0, voiceOn = true, opened = 0, orientationOn = false;
+let greenSince = 0, counting = false, lastSpoken = "", lastSpokeAt = 0, voiceOn = false, opened = 0, orientationOn = false;
 
 function build(){
   if (ui) return ui;
@@ -43,7 +43,7 @@ function build(){
     <div class="lc-bar">
       <button class="lc-small" id="lc-close" aria-label="Close camera">✕</button>
       <button class="lc-shutter" id="lc-shutter" aria-label="Take photo now"></button>
-      <button class="lc-small" id="lc-voice" aria-label="Spoken guidance on" aria-pressed="true">🔊</button>
+      <button class="lc-small" id="lc-voice" aria-label="Spoken tips off" aria-pressed="false">🔇</button>
     </div>
     <div class="lc-res" id="lc-res"></div>
   </div>
@@ -59,7 +59,7 @@ function build(){
   $("lc-cancel").onclick = () => close(null);
   $("lc-close").onclick = () => close(null);
   $("lc-lowcancel").onclick = () => { $("lc-low").hidden = true; $("lc-view").hidden = false; running = true; loop(); };
-  $("lc-voice").onclick = () => { voiceOn = !voiceOn; $("lc-voice").textContent = voiceOn ? "🔊" : "🔇"; $("lc-voice").setAttribute("aria-pressed", voiceOn); $("lc-voice").setAttribute("aria-label", voiceOn ? "Spoken guidance on" : "Spoken guidance off"); if (!voiceOn) try { speechSynthesis.cancel(); } catch(e){} };
+  $("lc-voice").onclick = () => { voiceOn = !voiceOn; $("lc-voice").textContent = voiceOn ? "🔊" : "🔇"; $("lc-voice").setAttribute("aria-pressed", voiceOn); $("lc-voice").setAttribute("aria-label", voiceOn ? "Spoken tips on" : "Spoken tips off"); if (!voiceOn) try { speechSynthesis.cancel(); } catch(e){} };
   $("lc-shutter").onclick = () => capture(true);
   const nat = e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; const img = new Image(); img.onload = () => close([{ img, file: f, method: "photo from the camera app", w: img.naturalWidth, h: img.naturalHeight }]); img.src = URL.createObjectURL(f); };
   $("lc-native").onchange = nat; $("lc-native2").onchange = nat;
@@ -67,7 +67,7 @@ function build(){
 }
 
 function open(opts, done){
-  build(); onDone = done; mode = opts.mode; st = { beta: null };
+  build(); onDone = done; mode = opts.mode; st = { beta: null }; hist = []; lastQuad = lastOutline = null; shownMsg = ""; shownLevel = "red";
   $("lc-title").textContent = opts.title;
   $("lc-err").hidden = true;
   $("lc-intro").hidden = !!stream; $("lc-view").hidden = true; $("lc-low").hidden = true;
@@ -117,19 +117,65 @@ function mapper(r){
   const sc = Math.max(W/vw, H/vh), ox = (W - vw*sc)/2, oy = (H - vh*sc)/2, k = vw / r.w;
   return p => [ox + p[0]*k*sc, oy + p[1]*k*sc];
 }
+/* ---------- calm, steady guidance ----------
+   Single frames are never trusted on their own. Each problem must persist for about 1.2 seconds before it
+   is shown, the card and outline are held on screen for 1.5 seconds if a frame misses them, and the
+   message changes at most every 2 seconds. */
+const PERSIST_MS = 1200, HOLD_SHAPE_MS = 1500, MSG_MIN_MS = 2000;
+let hist = [], lastQuad = null, lastQuadAt = 0, lastOutline = null, lastOutlineAt = 0, shownMsg = "", shownAt = 0, shownLevel = "red";
+function smooth(r){
+  const now = Date.now();
+  hist.push({ t: now, r }); hist = hist.filter(h => now - h.t < 2500);
+  if (r.quad){ lastQuad = r.quad; lastQuadAt = now; }
+  if (r.outline && r.outline.length){ lastOutline = r.outline; lastOutlineAt = now; }
+  const recent = hist.filter(h => now - h.t < PERSIST_MS), span = recent.length ? now - recent[0].t : 0;
+  // an issue counts only if it appears in most of the last ~1.2 s of checks
+  const counts = {}; recent.forEach(h => h.r.issues.forEach(i => { counts[i.key] = counts[i.key] || { n: 0, i }; counts[i.key].n++; }));
+  const persistent = Object.values(counts).filter(c => c.n >= Math.max(2, Math.ceil(recent.length * .7))).map(c => c.i);
+  // keep the original priority order
+  const order = r.issues.map(i => i.key).concat(Object.keys(counts));
+  persistent.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+  const ready = span >= PERSIST_MS * .8 || recent.length >= 3;
+  let level = persistent.length ? persistent[0].lv : "green", msg = persistent.length ? persistent[0].text : "Hold still…";
+  if (!ready){ level = shownLevel === "green" ? "amber" : shownLevel; msg = shownMsg || "Checking…"; }
+  if (persistent.some(p => p.lv === "red")) level = "red";
+  if (msg !== shownMsg && level === shownLevel && now - shownAt < MSG_MIN_MS && shownMsg) msg = shownMsg; else if (msg !== shownMsg){ shownMsg = msg; shownAt = now; }
+  shownLevel = level;
+  const chipBad = new Set(); persistent.forEach(p => {
+    const k = p.key, t = p.text;
+    if (/card/i.test(t)) chipBad.add("Card"); if (/leg|foot|knee|guide|touching|edge/i.test(t)) chipBad.add("Framing");
+    if (/closer|back a little/i.test(t)) chipBad.add("Distance"); if (/tilt|upright/i.test(t)) chipBad.add("Angle");
+    if (k === "steady") chipBad.add("Steady"); if (/dark/i.test(t)) chipBad.add("Light"); if (/Point the camera/i.test(t)) chipBad.add("Leg"); });
+  const chips = r.chips.map(c => ({ k: c.k, ok: !chipBad.has(c.k) }));
+  return { level, msg, chips,
+    quad: r.quad || (now - lastQuadAt < HOLD_SHAPE_MS ? lastQuad : null),
+    outline: (r.outline && r.outline.length) ? r.outline : (now - lastOutlineAt < HOLD_SHAPE_MS ? lastOutline : null),
+    w: r.w, h: r.h, steadyNow: !r.issues.some(i => i.key === "steady") };
+}
 function draw(r){
   const c = $("lc-ov"), v = $("lc-video"), dpr = window.devicePixelRatio || 1;
   c.width = v.clientWidth*dpr; c.height = v.clientHeight*dpr; const g = c.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,c.width,c.height);
+  // guide band: where the measured leg should be
+  const W = v.clientWidth, Hh = v.clientHeight, band = mode === "front" ? [.36, .64] : [.30, .70];
+  g.fillStyle = "rgba(255,255,255,.07)"; g.fillRect(W*band[0], 0, W*(band[1]-band[0]), Hh);
+  g.setLineDash([10, 8]); g.lineWidth = 2; g.strokeStyle = "rgba(255,255,255,.75)";
+  g.beginPath(); g.moveTo(W/2, Hh*.16); g.lineTo(W/2, Hh*.98); g.stroke(); g.setLineDash([]);
+  g.font = "600 13px system-ui, sans-serif"; g.fillStyle = "rgba(255,255,255,.9)"; g.textAlign = "center";
+  g.fillText(mode === "side" ? "Line up the shin here" : "Line up the measured leg here", W/2, Hh*.15 + 14 + 70);
   if (!r) return;
   const M = mapper(r), col = { red: "#ff5a52", amber: "#f5b301", green: "#2fbf71" }[r.level];
   (r.outline || []).forEach(o => { g.beginPath(); o.forEach((p,i) => { const q = M(p); i ? g.lineTo(q[0],q[1]) : g.moveTo(q[0],q[1]); }); g.closePath(); g.lineWidth = 2.5; g.strokeStyle = "rgba(60,199,190,.95)"; g.stroke(); });
   if (r.quad){ g.beginPath(); r.quad.forEach((p,i) => { const q = M(p); i ? g.lineTo(q[0],q[1]) : g.moveTo(q[0],q[1]); }); g.closePath();
     g.fillStyle = r.level === "green" ? "rgba(47,191,113,.3)" : "rgba(91,140,255,.3)"; g.fill(); g.lineWidth = 3; g.strokeStyle = r.level === "green" ? col : "#5b8cff"; g.stroke(); }
 }
-function say(msg){
+/* Spoken tips are off unless turned on. When on, a tip is spoken only after the same problem has lasted
+   5 seconds, and no more than once every 10 seconds. */
+let tipSince = 0, tipText = "";
+function say(msg, force){
   if (!voiceOn || !("speechSynthesis" in window)) return;
-  const now = Date.now(); if (msg === lastSpoken && now - lastSpokeAt < 6000) return; if (now - lastSpokeAt < 2500) return;
-  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(msg.replace("…","")); u.rate = 1.05; speechSynthesis.speak(u); lastSpoken = msg; lastSpokeAt = now; } catch(e){}
+  const now = Date.now();
+  if (!force){ if (msg !== tipText){ tipText = msg; tipSince = now; return; } if (now - tipSince < 5000 || now - lastSpokeAt < 10000) return; }
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(msg.replace("…","")); u.rate = 1; speechSynthesis.speak(u); lastSpoken = msg; lastSpokeAt = now; } catch(e){}
 }
 function render(r){
   $("lc-ring").className = "lc-ring " + r.level;
@@ -147,18 +193,19 @@ async function loop(){
   const v = $("lc-video");
   if (!v.videoWidth){ setTimeout(loop, 150); return; }
   const t0 = performance.now();
-  let r = null; try { r = LegScan.liveCheck(v, mode, st); } catch(e){ r = null; }
-  if (r){
+  let raw = null; try { raw = LegScan.liveCheck(v, mode, st); } catch(e){ raw = null; }
+  if (raw){
+    const r = smooth(raw);
     render(r);
     if (r.level === "green" && !counting){ if (!greenSince) greenSince = Date.now(); if (Date.now() - greenSince > HOLD_MS) countdown(); }
-    else if (r.level !== "green"){ greenSince = 0; if (counting) cancelCountdown(); }
+    else if (r.level === "red"){ greenSince = 0; if (counting) cancelCountdown(); }
   }
   const dt = performance.now() - t0;
   if (running) setTimeout(loop, Math.max(120, 300 - dt));
 }
 let countTimer = null;
 function countdown(){
-  counting = true; let n = 3; const el = $("lc-count"); el.hidden = false; el.textContent = n; say("Hold still");
+  counting = true; let n = 3; const el = $("lc-count"); el.hidden = false; el.textContent = n; say("Hold still", true);
   countTimer = setInterval(() => { n--; if (n > 0){ el.textContent = n; return; } clearInterval(countTimer); el.hidden = true; capture(false); }, 600);
 }
 function cancelCountdown(){ counting = false; clearInterval(countTimer); $("lc-count").hidden = true; }
@@ -182,6 +229,7 @@ async function capture(manual){
     for (let i = 0; i < FRAMES; i++){ shots.push(await grab()); if (i < FRAMES-1) await new Promise(r => setTimeout(r, 120)); }
   } catch(e){}
   try { navigator.vibrate && navigator.vibrate(80); } catch(e){}
+  say("Done", true);
   if (!shots.length){ running = true; loop(); return; }
   const s0 = shots[0];
   if (s0.method === "live video frame" && Math.min(s0.w, s0.h) < MIN_SHORT_SIDE){

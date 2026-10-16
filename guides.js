@@ -103,7 +103,7 @@ window.GUIDES = {
       "Have the patient stand facing you, weight on both feet, with the feet <b>a fist's width apart</b> so the legs do not touch.",
       "Lay the card <b>flat on the floor, face down</b>, right beside the <b>outside of the ankle</b> being measured, long side along the foot. The card must be level with the ankle, not in front of the toes.",
       "Stand <b>60–90 cm (2–3 ft)</b> in front of the measured leg. Hold the phone <b>upright</b> at about <b>knee height</b>, tilted slightly down.",
-      "Frame the photo with the <b>knee near the top</b> and the <b>whole foot and the whole card</b> at the bottom, with a little floor below the foot.",
+      "Line up the measured leg on the <b>dashed guide line</b> in the middle of the screen, with the <b>knee near the top</b> and the <b>whole foot and the whole card</b> at the bottom.",
       "Turn the flash off, hold still, and take the photo."
     ],
     avoid: [
@@ -123,7 +123,7 @@ window.GUIDES = {
       "Ask the patient to move the <b>other foot one step back</b>, keeping weight on both feet, so it does not show behind the measured leg.",
       "Lay the card <b>flat on the floor, face down</b>, about <b>a hand's width (10 cm) in front of the foot</b> on your side, under the ankle, long side along the foot.",
       "Stand <b>60–90 cm (2–3 ft)</b> away. Hold the phone <b>upright</b> at about <b>knee height</b>, tilted slightly down.",
-      "Frame the photo with the <b>bump below the kneecap</b> near the top and the <b>heel, toes and whole card</b> at the bottom. Flash off, then take the photo."
+      "Line up the shin on the <b>dashed guide line</b> in the middle of the screen, with the <b>bump below the kneecap</b> near the top and the <b>heel, toes and whole card</b> at the bottom."
     ],
     avoid: [
       "The other foot next to the measured foot, where it shows behind it",
