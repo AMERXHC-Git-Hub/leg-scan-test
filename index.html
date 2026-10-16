@@ -63,7 +63,7 @@ p { margin: 0; max-width: 62ch; }
 .illus svg { width: 100%; max-width: 300px; height: auto; color: var(--ink); }
 .bullets { display: flex; flex-direction: column; gap: 8px; padding: 0; margin: 0; list-style: none; }
 .bullets li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; }
-.bullets li b { font: 500 .85rem var(--f-mono); color: var(--muted); padding-top: 2px; }
+.bullets li > b { font: 500 .85rem var(--f-mono); color: var(--muted); padding-top: 2px; }
 .stage { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); }
 .stage canvas { display: block; width: 100%; }
 .checks { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 0; padding: 0; }
@@ -116,6 +116,17 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 .mtable td .sz { font-weight: 600; }
 .unit { display: flex; gap: 6px; align-items: center; }
 .unit select { min-height: 40px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: 500 .95rem var(--f-body); padding: 0 8px; }
+.fig { display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.fig .cap { font-size: .74rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+.fig svg { width: 100%; height: auto; display: block; color: var(--ink); }
+.avoid { list-style: none; margin: 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; background: var(--bad-bg); border-radius: 12px; }
+.avoid h3 { color: var(--bad); font-size: 1rem; }
+.avoid li { display: grid; grid-template-columns: 20px 1fr; gap: 6px; font-size: .92rem; }
+.avoid li::before { content: "✕"; color: var(--bad); font-weight: 700; }
+.bullets li span b { font: inherit; font-weight: 700; color: var(--ink); }
+.before { display: flex; flex-direction: column; gap: 10px; counter-reset: b; }
+.before div { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.before b.t { display: block; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 10px; z-index: 5; max-width: 90vw; }
 </style>
 
@@ -141,14 +152,8 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
   <div class="body">
     <div class="topbar"><button class="back" data-back="home" aria-label="Back">‹</button><span class="steplabel">Before you start</span></div>
     <h2>Get set up</h2>
-    <div class="list">
-      <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 40 L22 30 L48 30 L36 40 Z" stroke="var(--card)"/></svg>
-        <p><b>A standard-size card, flat on the floor.</b> Any bank, gift or ID card, face down so no number shows. A light-colored back stands out best.</p></div>
-      <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 6 C20 20 26 30 22 40 L18 48 L38 48 L32 40 C30 30 36 20 34 6"/></svg>
-        <p><b>Bare leg or tight leggings, up past the knee.</b> Loose clothing or socks would be measured as part of the leg.</p></div>
-      <div class="tip"><svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="14" r="5"/><path d="M18 19v16M18 35l-6 14M18 35l6 14"/><rect x="34" y="20" width="12" height="20" rx="2"/></svg>
-        <p><b>The patient stands still</b> with weight on both feet while you take the photos.</p></div>
-    </div>
+    <div class="before" id="beforelist"></div>
+    <div class="fig"><span class="cap">Where the app measures</span><div id="anatomy"></div></div>
   </div>
   <div class="actions"><button class="btn primary" id="go-first">Continue</button></div>
 </div>
@@ -215,6 +220,7 @@ td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabu
 <script src="opencv.js" async></script>
 <script src="pipeline.js"></script>
 <script src="products.js"></script>
+<script src="guides.js"></script>
 <script>
 (function(){
 "use strict";
@@ -263,6 +269,18 @@ const nextOf = k => { const s = steps(), i = s.indexOf(k); return i < s.length-1
 const backOf = k => { const s = steps(), i = s.indexOf(k); return i > 0 ? s[i-1] : "setup"; };
 const needsKnee = k => k === "side" && product.lengths;
 
+function guideHTML(key){
+  const g = GUIDES[key];
+  return `<div class="fig"><span class="cap">1 · Set up (seen from above)</span>${g.setup}</div>
+    <div class="fig"><span class="cap">2 · Your photo should look like this</span>${g.photo}</div>
+    <h3>Steps</h3>
+    <ul class="bullets">${g.steps.map((t,i)=>`<li><b>${i+1}</b><span>${t}</span></li>`).join("")}</ul>
+    <ul class="avoid"><h3>Avoid</h3>${g.avoid.map(t => `<li>${t}</li>`).join("")}</ul>`;
+}
+function renderSetup(){
+  $("beforelist").innerHTML = GUIDES.before.map(b => `<div><b class="t">${b.t}</b><span class="small">${b.d}</span></div>`).join("");
+  $("anatomy").innerHTML = GUIDES.anatomy(product.measures);
+}
 function captureScreen(key){
   const st = STEP_INFO[key], el = $("s-"+key), ph = S.photo[key], r = S.res[key], s = steps(), n = s.indexOf(key)+1;
   const top = `<div class="topbar"><button class="back" data-back="${backOf(key)}" aria-label="Back">‹</button><div style="flex:1;display:flex;flex-direction:column;gap:6px"><span class="steplabel">Photo ${n} of ${s.length}</span><div class="bar"><i style="width:${n/s.length*100}%"></i></div></div></div>`;
@@ -270,8 +288,7 @@ function captureScreen(key){
       <label class="btn">Choose from photos<input type="file" accept="image/*" data-file="${key}"></label>`;
   let body, actions;
   if (!ph){
-    body = `<h2>${st.title}</h2><div class="illus" aria-hidden="true">${st.art}</div>
-      <ul class="bullets">${st.tips.map((t,i)=>`<li><b>${i+1}</b><span>${t}</span></li>`).join("")}</ul>`;
+    body = `<h2>${st.title}</h2>${guideHTML(key)}`;
     actions = fileBtns(true);
   } else if (!r){
     body = `<h2>${st.title}</h2><div class="working"><div class="spinner"></div><span id="workmsg">${toolsReady ? `Finding the card and the ${st.what}…` : "Loading the measuring tools (first time only)…"}</span></div>`;
@@ -283,11 +300,9 @@ function captureScreen(key){
     let kneeMsg = "";
     if (kneeStep){
       if (S.kneeTap){ summary = "Leg length measured"; kneeMsg = `<div class="rec"><span class="label">Leg length (L)</span><span class="big">${both(S.legLen)}</span><span class="small">Tap the photo again to move the knee marker.</span></div>`; }
-      else { summary = "Tap the bump below the knee"; kneeMsg = `<p><b>Tap the bony bump just below the kneecap</b> (the tibial tuberosity) on the front edge of the shin. The app measures leg length from the floor to that point.</p>`; }
+      else { summary = "Tap the bump below the knee"; kneeMsg = `<p><b>Tap the bony bump just below the kneecap</b> (the tibial tuberosity) on the front of the shin in the photo below. The app measures leg length from the floor to that point.</p><div class="fig"><span class="cap">Where to tap</span>${GUIDES.kneeTap}</div>`; }
     }
-    const guide = `<details class="panel" ${r.ok ? "" : "open"}><summary>How to take the ${st.title.toLowerCase()} photo</summary>
-        <div class="illus" aria-hidden="true">${st.art}</div>
-        <ul class="bullets">${st.tips.map((t,i)=>`<li><b>${i+1}</b><span>${t}</span></li>`).join("")}</ul></details>`;
+    const guide = `<details class="panel" ${r.ok ? "" : "open"}><summary>How to take the ${st.title.toLowerCase()} photo</summary>${guideHTML(key)}</details>`;
     body = `<h2>${summary}</h2>${kneeMsg}
       <div class="stage"><canvas id="cv-${key}" aria-label="Photo with the detected card and outline drawn on it"></canvas></div>
       ${r.needSeed ? `<p><b>Tap the card in the photo</b> if it's there, and the app will look again.</p>` : ""}
@@ -517,6 +532,7 @@ function show(name){
   if (name === "results") results();
   if (STEP_INFO[name]) captureScreen(name);
   if (name === "shoe") renderShoe();
+  if (name === "setup") renderSetup();
   if (name === "log") renderLog();
   if (name !== "log") S.prev = name;
   document.querySelectorAll(".screen").forEach(s => s.hidden = s.id !== "s-"+name);
